@@ -9,6 +9,7 @@
 
   const peers = new Map();
   const listeners = new Set();
+  const seenPackets = new Set();
   let localName = "Racer";
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const enc = value => btoa(unescape(encodeURIComponent(JSON.stringify(value))))
@@ -38,23 +39,33 @@
     pc.onconnectionstatechange = update;
     channel.onopen = () => emit("peer-joined", { name: name || "Racer" }, id);
     channel.onclose = () => { peers.delete(id); emit("peer-left", { name: name || "Racer" }, id); };
-    channel.onmessage = e => {
-      try {
-        const packet = JSON.parse(e.data);
-        emit(packet.type || "message", packet.data, id);
-      } catch { /* Ignore malformed packets. */ }
-    };
+    channel.onmessage = e => receivePacket(e.data, id);
     pc.ondatachannel = e => {
       const p = peers.get(id);
       if (p && p.channel !== e.channel) {
         p.channel = e.channel;
         e.channel.onopen = () => emit("peer-joined", { name: p.name }, id);
         e.channel.onclose = () => { peers.delete(id); emit("peer-left", { name: p.name }, id); };
-        e.channel.onmessage = ev => {
-          try { const packet = JSON.parse(ev.data); emit(packet.type || "message", packet.data, id); } catch {}
-        };
+        e.channel.onmessage = ev => receivePacket(ev.data, id);
       }
     };
+  }
+  function receivePacket(raw, fromPeerId) {
+    try {
+      const packet = JSON.parse(raw);
+      if (!packet || typeof packet !== "object" || typeof packet.type !== "string") return;
+      const packetId = packet.id || (packet.id = Math.random().toString(36).slice(2) + Date.now().toString(36));
+      if (seenPackets.has(packetId)) return;
+      seenPackets.add(packetId);
+      if (seenPackets.size > 1500) seenPackets.clear();
+      emit(packet.type || "message", packet.data, fromPeerId);
+      const forwarded = JSON.stringify(packet);
+      for (const [peerId, peer] of peers) {
+        if (peerId !== fromPeerId && peer.channel && peer.channel.readyState === "open") {
+          try { peer.channel.send(forwarded); } catch {}
+        }
+      }
+    } catch { /* Ignore malformed packets. */ }
   }
   function rtc() {
     return new RTCPeerConnection({
@@ -105,7 +116,9 @@
     return true;
   }
   function send(type, data) {
-    const packet = JSON.stringify({ type, data, from: localName, at: Date.now() });
+    const packetId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    seenPackets.add(packetId);
+    const packet = JSON.stringify({ id: packetId, type, data, from: localName, at: Date.now() });
     let sent = 0;
     for (const p of peers.values()) {
       if (p.channel && p.channel.readyState === "open") { p.channel.send(packet); sent++; }
@@ -115,7 +128,9 @@
   function sendTo(peerId, type, data) {
     const p = peers.get(peerId);
     if (!p || !p.channel || p.channel.readyState !== "open") return false;
-    p.channel.send(JSON.stringify({ type, data, from: localName, at: Date.now() }));
+    const packetId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    seenPackets.add(packetId);
+    p.channel.send(JSON.stringify({ id: packetId, type, data, from: localName, at: Date.now() }));
     return true;
   }
   function close() {
@@ -189,8 +204,12 @@
         try { await navigator.clipboard.writeText($("output").value); status("Code copied."); }
         catch { $("output").focus(); $("output").select(); status("Clipboard unavailable; code selected for copying."); }
       };
-      PolyTrackDirect.onMessage(refresh);
-      setInterval(() => { if (panel.isConnected) refresh(); }, 1500);
+      const unsubscribe = PolyTrackDirect.onMessage(refresh);
+      const refreshTimer = setInterval(() => { if (panel.isConnected) refresh(); }, 1500);
+      $("close").addEventListener("click", () => {
+        clearInterval(refreshTimer);
+        unsubscribe();
+      }, { once: true });
     }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", installPanel, { once: true });
