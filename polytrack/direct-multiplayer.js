@@ -246,7 +246,7 @@
       if (!this.__ptLocalIce) return super.send(body);
       Object.defineProperty(this, "readyState", { configurable: true, get: () => 4 });
       Object.defineProperty(this, "status", { configurable: true, get: () => 200 });
-      Object.defineProperty(this, "responseText", { configurable: true, get: () => "[]" });
+      Object.defineProperty(this, "responseText", { configurable: true, get: () => '[{"urls":["stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302","stun:stun2.l.google.com:19302"]}]' });
       setTimeout(() => this.onreadystatechange && this.onreadystatechange(), 0);
     }
   };
