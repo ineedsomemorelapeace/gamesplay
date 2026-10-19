@@ -144,72 +144,188 @@
     getPeers() { return [...peers.entries()].map(([id, p]) => ({ id, name: p.name, state: p.pc.connectionState })); }
   };
 
+  // Intercept only PolyTrack's multiplayer signaling endpoints. All other
+  // networking remains untouched; room negotiation is exchanged as pasteable codes.
+  const NativeWebSocket = window.WebSocket;
+  const NativeXHR = window.XMLHttpRequest;
+  const joinSockets = new Map();
+  let hostSocket = null;
+  let roomCode = null;
+  let roomSession = null;
+  let activeGuestId = null;
+  let lastRtcPc = null;
+  const randomId = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
+  const fireMessage = (socket, payload) => socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(payload) }));
+  function waitForIce(pc) {
+    return new Promise(resolve => {
+      if (!pc || pc.iceGatheringState === "complete") return resolve();
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        pc.removeEventListener("icegatheringstatechange", check);
+        clearTimeout(timer);
+        resolve();
+      };
+      const check = () => { if (pc.iceGatheringState === "complete") done(); };
+      const timer = setTimeout(done, 16000);
+      pc.addEventListener("icegatheringstatechange", check);
+    });
+  }
+  class PolyTrackCodeSocket extends EventTarget {
+    constructor(role) {
+      super();
+      this.role = role;
+      this.readyState = 0;
+      this.currentGuestId = null;
+      if (role === "host") hostSocket = this;
+      setTimeout(() => { this.readyState = 1; this.dispatchEvent(new Event("open")); }, 0);
+    }
+    send(raw) {
+      let data;
+      try { data = JSON.parse(raw); } catch { return; }
+      if (this.role === "host" && data.type === "createInvite") {
+        roomCode = "PTD" + randomId().replace(/-/g, "").slice(0, 8).toUpperCase();
+        roomSession = randomId();
+        setTimeout(() => fireMessage(this, { version: "0.6.0", type: "createInvite", inviteCode: roomCode, timeoutMilliseconds: null, censoredNickname: null, key: "direct" }), 0);
+        showStatus("Direct room created. Share the room code shown by PolyTrack. No multiplayer server is used.");
+        return;
+      }
+      if (this.role === "join" && data.inviteCode && data.offer) {
+        const guestId = randomId();
+        joinSockets.set(guestId, this);
+        this.guestId = guestId;
+        (async () => {
+          await waitForIce(lastRtcPc);
+          const offer = lastRtcPc && lastRtcPc.localDescription ? lastRtcPc.localDescription.sdp : data.offer;
+          const code = makeCode({ v: 1, kind: "game-offer", roomCode: data.inviteCode, guestId, offer, nickname: data.nickname || "Racer", countryCode: data.countryCode ?? null, carStyle: data.carStyle || "" });
+          setOutput(code);
+          showStatus("Offer code generated. Send it to the room host; the host pastes it into this panel and forwards it to the game.");
+        })().catch(e => showStatus("Could not prepare offer: " + (e.message || e)));
+        return;
+      }
+      if (this.role === "host" && data.type === "acceptJoin") {
+        const guestId = this.currentGuestId || activeGuestId;
+        (async () => {
+          await waitForIce(lastRtcPc);
+          const answer = lastRtcPc && lastRtcPc.localDescription ? lastRtcPc.localDescription.sdp : data.answer;
+          setOutput(makeCode({ v: 1, kind: "game-answer", roomCode, guestId, answer, mods: [], isModsVanillaCompatible: true, clientId: data.clientId, session: data.session }));
+          showStatus("Answer code generated. Send it to the matching player who gave you the offer code.");
+        })().catch(e => showStatus("Could not prepare answer: " + (e.message || e)));
+        return;
+      }
+      // ICE candidates are embedded in the completed SDP codes, so trickle
+      // candidate messages do not need to leave this browser.
+    }
+    close() { if (this.readyState === 3) return; this.readyState = 3; this.dispatchEvent(new Event("close")); }
+  }
+  window.WebSocket = class PolyTrackWebSocket extends NativeWebSocket {
+    constructor(url, protocols) {
+      const value = String(url);
+      if (value.includes("/v6/multiplayer/host")) return new PolyTrackCodeSocket("host");
+      if (value.includes("/v6/multiplayer/join")) return new PolyTrackCodeSocket("join");
+      return protocols === undefined ? super(url) : super(url, protocols);
+    }
+  };
+  const OriginalPeerConnection = window.RTCPeerConnection;
+  if (OriginalPeerConnection) {
+    window.RTCPeerConnection = class PolyTrackTrackedPeerConnection extends OriginalPeerConnection {
+      constructor(...args) { super(...args); lastRtcPc = this; }
+    };
+  }
+  // The stock game requests ICE servers from its backend. STUN is public and
+  // the complete SDP is exchanged manually, so answer with an empty ICE list.
+  window.XMLHttpRequest = class PolyTrackXHR extends NativeXHR {
+    open(method, url, ...rest) {
+      this.__ptLocalIce = String(url).includes("/v6/iceServers");
+      if (!this.__ptLocalIce) return super.open(method, url, ...rest);
+      this.__ptIceMethod = method;
+      this.__ptIceUrl = url;
+    }
+    send(body) {
+      if (!this.__ptLocalIce) return super.send(body);
+      Object.defineProperty(this, "readyState", { configurable: true, get: () => 4 });
+      Object.defineProperty(this, "status", { configurable: true, get: () => 200 });
+      Object.defineProperty(this, "responseText", { configurable: true, get: () => "[]" });
+      setTimeout(() => this.onreadystatechange && this.onreadystatechange(), 0);
+    }
+  };
+  function decodeGameCode(value) {
+    const data = readCode(value);
+    if (!data || data.v !== 1) throw new Error("That isn't a valid PolyTrack direct code.");
+    return data;
+  }
+  function showStatus(message) {
+    const node = document.getElementById("pt-direct-status");
+    if (node) node.textContent = message;
+  }
+  function setOutput(value) {
+    const node = document.getElementById("pt-direct-output");
+    if (node) node.value = value;
+  }
+  function deliverOffer() {
+    try {
+      const code = decodeGameCode(document.getElementById("pt-direct-code").value);
+      if (code.kind !== "game-offer") throw new Error("Paste a player's offer code here.");
+      if (!hostSocket || !roomCode) throw new Error("Create a PolyTrack room first, then paste the offer here.");
+      if (code.roomCode !== roomCode) throw new Error("This offer belongs to a different room code.");
+      activeGuestId = code.guestId;
+      hostSocket.currentGuestId = code.guestId;
+      fireMessage(hostSocket, { version: "0.6.0", type: "joinInvite", session: roomSession, offer: code.offer, mods: [], isModsVanillaCompatible: true, nickname: code.nickname || "Racer", countryCode: code.countryCode ?? null, carStyle: code.carStyle || "" });
+      showStatus("Offer delivered to PolyTrack. Wait for the answer code to appear here.");
+    } catch (e) { showStatus(e.message || String(e)); }
+  }
+  function deliverAnswer() {
+    try {
+      const code = decodeGameCode(document.getElementById("pt-direct-code").value);
+      if (code.kind !== "game-answer") throw new Error("Paste the host's answer code here.");
+      const socket = joinSockets.get(code.guestId);
+      if (!socket) throw new Error("This answer is for another player or this page's join attempt has expired.");
+      fireMessage(socket, { version: "0.6.0", type: "acceptJoin", answer: code.answer, mods: code.mods || [], isModsVanillaCompatible: code.isModsVanillaCompatible !== false, clientId: code.clientId });
+      showStatus("Answer delivered to PolyTrack. Waiting for the peer-to-peer connection to establish.");
+    } catch (e) { showStatus(e.message || String(e)); }
+  }
   function installPanel() {
     if (!document.body || document.getElementById("pt-direct-panel")) return;
     const style = document.createElement("style");
-    style.textContent = `
-      #pt-direct-launch{position:fixed;z-index:99990;right:14px;bottom:14px;border:1px solid #5c7cff;background:#151923;color:#fff;border-radius:12px;padding:12px 16px;font:600 14px system-ui;box-shadow:0 6px 25px #0008}
-      #pt-direct-panel{position:fixed;z-index:99999;inset:0;background:#07090de8;display:flex;align-items:center;justify-content:center;padding:16px;font:14px system-ui;color:#f4f6ff}
-      #pt-direct-panel *{box-sizing:border-box} #pt-direct-card{width:min(620px,100%);max-height:90vh;overflow:auto;background:#151923;border:1px solid #343b50;border-radius:18px;padding:22px;box-shadow:0 20px 80px #000a}
-      #pt-direct-card h2{margin:0 0 8px;font-size:22px} #pt-direct-card p{color:#b6bed2;line-height:1.45}
-      #pt-direct-card label{display:block;margin:14px 0 6px;color:#cbd2e6}
-      #pt-direct-card input,#pt-direct-card textarea{width:100%;background:#0b0e15;border:1px solid #394258;border-radius:9px;padding:11px;color:#fff;font:13px ui-monospace,monospace}
-      #pt-direct-card textarea{min-height:90px;resize:vertical;overflow-wrap:anywhere}
-      #pt-direct-card .pt-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-      #pt-direct-card button{border:1px solid #48536d;background:#242b3c;color:white;border-radius:9px;padding:10px 12px;font-weight:600}
-      #pt-direct-card button.pt-primary{background:#536dfe;border-color:#536dfe} #pt-direct-status{white-space:pre-wrap;color:#bfcaff;margin-top:12px}
-      #pt-direct-peers{padding:10px;background:#0b0e15;border-radius:9px;color:#cbd2e6;min-height:38px}
-    `;
+    style.textContent = [
+      "#pt-direct-launch{position:fixed;z-index:99990;right:14px;bottom:14px;border:1px solid #5c7cff;background:#151923;color:#fff;border-radius:12px;padding:12px 16px;font:600 14px system-ui;box-shadow:0 6px 25px #0008}",
+      "#pt-direct-panel{position:fixed;z-index:99999;inset:0;background:#07090de8;display:flex;align-items:center;justify-content:center;padding:16px;font:14px system-ui;color:#f4f6ff}",
+      "#pt-direct-card{width:min(650px,100%);max-height:90vh;overflow:auto;background:#151923;border:1px solid #343b50;border-radius:18px;padding:22px;box-shadow:0 20px 80px #000a}",
+      "#pt-direct-card h2{margin:0 0 8px;font-size:22px}#pt-direct-card p{color:#b6bed2;line-height:1.45}",
+      "#pt-direct-card label{display:block;margin:14px 0 6px;color:#cbd2e6}",
+      "#pt-direct-card textarea{width:100%;background:#0b0e15;border:1px solid #394258;border-radius:9px;padding:11px;color:#fff;font:12px ui-monospace,monospace;min-height:100px;resize:vertical;overflow-wrap:anywhere;box-sizing:border-box}",
+      "#pt-direct-card .pt-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}",
+      "#pt-direct-card button{border:1px solid #48536d;background:#242b3c;color:white;border-radius:9px;padding:10px 12px;font-weight:600}",
+      "#pt-direct-card button.pt-primary{background:#536dfe;border-color:#536dfe}#pt-direct-status{white-space:pre-wrap;color:#bfcaff;margin-top:12px}"
+    ].join("\n");
     document.head.appendChild(style);
     const launch = document.createElement("button");
-    launch.id = "pt-direct-launch"; launch.textContent = "↗ Direct Multiplayer";
+    launch.id = "pt-direct-launch"; launch.textContent = "↗ Direct Multiplayer Codes";
     launch.onclick = open;
     document.body.appendChild(launch);
     function open() {
       if (document.getElementById("pt-direct-panel")) return;
       const panel = document.createElement("div"); panel.id = "pt-direct-panel";
-      panel.innerHTML = `<section id="pt-direct-card" role="dialog" aria-modal="true" aria-label="Direct multiplayer">
-        <h2>PolyTrack · Direct Multiplayer</h2><p>Connect racers without a room server. Share codes privately. Every player can create an invite so groups can form a peer mesh.</p>
-        <label for="pt-direct-name">Your racer name</label><input id="pt-direct-name" maxlength="24" value="Racer">
-        <div class="pt-actions"><button class="pt-primary" id="pt-direct-create">Create invite code</button><button id="pt-direct-close">Close</button></div>
-        <label for="pt-direct-code">Paste an invite code to join</label><textarea id="pt-direct-code" placeholder="PT-..."></textarea>
-        <div class="pt-actions"><button class="pt-primary" id="pt-direct-join">Create answer code</button><button id="pt-direct-accept">Accept answer (invite creator)</button><button id="pt-direct-copy">Copy output</button></div>
-        <label for="pt-direct-output">Your generated code</label><textarea id="pt-direct-output" readonly placeholder="Generated connection code appears here"></textarea>
-        <label>Connected racers</label><div id="pt-direct-peers">No peer connections yet.</div><div id="pt-direct-status" role="status">Ready. Codes contain connection metadata; they do not contain gameplay data.</div>
-        <p><small>For 3+ racers, each connected racer can create an invite and share it with the others. Direct WebRTC may fail on restrictive networks without a TURN relay. The game must route its race-state messages through this connection module for live races to synchronize.</small></p>
-      </section>`;
+      panel.innerHTML = '<section id="pt-direct-card" role="dialog" aria-modal="true" aria-label="Direct multiplayer codes">' +
+        '<h2>PolyTrack · Serverless Multiplayer</h2>' +
+        '<p>Use PolyTrack’s normal Create Room / Join Room controls first. Then exchange the offer and answer codes below. Multiplayer signaling and ICE-server lookup are handled locally; the game data channels remain PolyTrack’s own.</p>' +
+        '<div class="pt-actions"><button id="pt-direct-close">Close</button><button id="pt-direct-copy" class="pt-primary">Copy generated code</button></div>' +
+        '<label for="pt-direct-code">Paste the other player’s offer or answer code</label><textarea id="pt-direct-code" placeholder="PT-..."></textarea>' +
+        '<div class="pt-actions"><button id="pt-direct-offer" class="pt-primary">Forward offer to host</button><button id="pt-direct-answer" class="pt-primary">Forward answer to player</button></div>' +
+        '<label for="pt-direct-output">Your generated code</label><textarea id="pt-direct-output" readonly placeholder="A generated code appears when PolyTrack creates an offer or answer"></textarea>' +
+        '<div id="pt-direct-status" role="status">Ready. Host: create a room in PolyTrack. Guest: join with the room code, then share the generated offer code. Host returns an answer code.</div>' +
+        '<p><small>Each player must complete the offer/answer exchange. Public STUN servers are used for peer discovery; restrictive NATs may still prevent a direct connection because no TURN relay is used.</small></p>' +
+        '</section>';
       document.body.appendChild(panel);
       const $ = id => panel.querySelector("#pt-direct-" + id);
-      const status = message => { $("status").textContent = message; };
-      const refresh = () => {
-        const list = window.PolyTrackDirect.getPeers();
-        $("peers").textContent = list.length ? list.map(p => p.name + " — " + p.state).join("\n") : "No peer connections yet.";
-      };
-      $("name").onchange = () => PolyTrackDirect.setName($("name").value);
-      $("name").oninput = () => PolyTrackDirect.setName($("name").value);
       $("close").onclick = () => panel.remove();
-      $("create").onclick = async () => {
-        try { PolyTrackDirect.setName($("name").value); status("Gathering network details…"); $("output").value = await PolyTrackDirect.createInvite(); status("Invite ready. Send it to one racer, then paste their answer code here and select Accept answer."); }
-        catch (e) { status(e.message || String(e)); }
-      };
-      $("join").onclick = async () => {
-        try { PolyTrackDirect.setName($("name").value); status("Creating peer answer…"); $("output").value = await PolyTrackDirect.answerInvite($("code").value); status("Answer ready. Send it back to the person who created the invite."); refresh(); }
-        catch (e) { status(e.message || String(e)); }
-      };
-      $("accept").onclick = async () => {
-        try { await PolyTrackDirect.acceptAnswer($("code").value); status("Answer accepted. Waiting for peer connection…"); refresh(); }
-        catch (e) { status(e.message || String(e)); }
-      };
+      $("offer").onclick = deliverOffer;
+      $("answer").onclick = deliverAnswer;
       $("copy").onclick = async () => {
-        try { await navigator.clipboard.writeText($("output").value); status("Code copied."); }
-        catch { $("output").focus(); $("output").select(); status("Clipboard unavailable; code selected for copying."); }
+        try { await navigator.clipboard.writeText($("output").value); showStatus("Generated code copied."); }
+        catch { $("output").focus(); $("output").select(); showStatus("Clipboard unavailable; code selected for copying."); }
       };
-      const unsubscribe = PolyTrackDirect.onMessage(refresh);
-      const refreshTimer = setInterval(() => { if (panel.isConnected) refresh(); }, 1500);
-      $("close").addEventListener("click", () => {
-        clearInterval(refreshTimer);
-        unsubscribe();
-      }, { once: true });
     }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", installPanel, { once: true });
