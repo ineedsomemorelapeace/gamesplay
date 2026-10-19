@@ -311,25 +311,35 @@
     function open() {
       if (document.getElementById("pt-direct-panel")) return;
       const panel = document.createElement("div"); panel.id = "pt-direct-panel";
-      panel.innerHTML = '<section id="pt-direct-card" role="dialog" aria-modal="true" aria-label="Direct multiplayer codes">' +
-        '<h2>PolyTrack · Serverless Multiplayer</h2>' +
-        '<p>Use PolyTrack’s normal Create Room / Join Room controls first. Then exchange the offer and answer codes below. Multiplayer signaling and ICE-server lookup are handled locally; the game data channels remain PolyTrack’s own.</p>' +
-        '<div class="pt-actions"><button id="pt-direct-close">Close</button><button id="pt-direct-copy" class="pt-primary">Copy generated code</button></div>' +
-        '<label for="pt-direct-code">Paste the other player’s offer or answer code</label><textarea id="pt-direct-code" placeholder="PT-..."></textarea>' +
-        '<div class="pt-actions"><button id="pt-direct-offer" class="pt-primary">Forward offer to host</button><button id="pt-direct-answer" class="pt-primary">Forward answer to player</button></div>' +
-        '<label for="pt-direct-output">Your generated code</label><textarea id="pt-direct-output" readonly placeholder="A generated code appears when PolyTrack creates an offer or answer"></textarea>' +
-        '<div id="pt-direct-status" role="status">Ready. Host: create a room in PolyTrack. Guest: join with the room code, then share the generated offer code. Host returns an answer code.</div>' +
-        '<p><small>Each player must complete the offer/answer exchange. Public STUN servers are used for peer discovery; restrictive NATs may still prevent a direct connection because no TURN relay is used.</small></p>' +
+      panel.innerHTML = '<section id="pt-direct-card" role="dialog" aria-modal="true" aria-label="Direct multiplayer">' +
+        '<h2>PolyTrack / Direct Connection</h2>' +
+        '<p>Create or join a room using PolyTrack’s normal multiplayer menu. The host shares the room code. After a player joins, their connection code appears here automatically. Paste that code on the host screen; it is checked and forwarded automatically. The host must send the generated reply code back to that player to finish the direct connection.</p>' +
+        '<div class="pt-actions"><button id="pt-direct-close">Close</button><button id="pt-direct-copy" class="pt-primary">Copy code</button></div>' +
+        '<label for="pt-direct-code">Enter code from the other player</label><textarea id="pt-direct-code" placeholder="Paste a PolyTrack connection code here"></textarea>' +
+        '<label for="pt-direct-output">Your connection code</label><textarea id="pt-direct-output" readonly placeholder="Your code appears here automatically"></textarea>' +
+        '<div id="pt-direct-status" role="status">Ready. Host: create a room and share its room code. Player: join that room; your connection code will appear here.</div>' +
+        '<p><small>Codes are exchanged manually because no signaling server is used. Each player needs one reply code from the host. Direct connections can still fail on restrictive networks without a TURN relay.</small></p>' +
         '</section>';
       document.body.appendChild(panel);
       const $ = id => panel.querySelector("#pt-direct-" + id);
       $("output").value = lastOutput;
       $("status").textContent = lastStatus;
       $("close").onclick = () => panel.remove();
-      $("offer").onclick = deliverOffer;
-      $("answer").onclick = deliverAnswer;
+      let inputTimer = null;
+      const processCode = () => {
+        const field = $("code");
+        if (!field.value.trim()) return;
+        try {
+          const data = decodeGameCode(field.value);
+          if (data.kind === "game-offer") deliverOffer();
+          else if (data.kind === "game-answer") deliverAnswer();
+          else showStatus("This code type is not used by the PolyTrack room bridge.");
+        } catch (e) { if (field.value.trim().length > 80) showStatus(e.message || String(e)); }
+      };
+      $("code").addEventListener("paste", () => setTimeout(processCode, 80));
+      $("code").addEventListener("input", () => { clearTimeout(inputTimer); inputTimer = setTimeout(processCode, 450); });
       $("copy").onclick = async () => {
-        try { await navigator.clipboard.writeText($("output").value); showStatus("Generated code copied."); }
+        try { await navigator.clipboard.writeText($("output").value); showStatus("Code copied. Send it to the other player."); }
         catch { $("output").focus(); $("output").select(); showStatus("Clipboard unavailable; code selected for copying."); }
       };
     }
