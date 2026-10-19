@@ -255,13 +255,17 @@
     if (!data || data.v !== 1) throw new Error("That isn't a valid PolyTrack direct code.");
     return data;
   }
+  let lastOutput = "";
+  let lastStatus = "Ready. Create or join a room in PolyTrack, then reopen this panel to exchange codes.";
   function showStatus(message) {
+    lastStatus = String(message);
     const node = document.getElementById("pt-direct-status");
-    if (node) node.textContent = message;
+    if (node) node.textContent = lastStatus;
   }
   function setOutput(value) {
+    lastOutput = String(value || "");
     const node = document.getElementById("pt-direct-output");
-    if (node) node.value = value;
+    if (node) node.value = lastOutput;
   }
   function deliverOffer() {
     try {
@@ -319,6 +323,8 @@
         '</section>';
       document.body.appendChild(panel);
       const $ = id => panel.querySelector("#pt-direct-" + id);
+      $("output").value = lastOutput;
+      $("status").textContent = lastStatus;
       $("close").onclick = () => panel.remove();
       $("offer").onclick = deliverOffer;
       $("answer").onclick = deliverAnswer;
