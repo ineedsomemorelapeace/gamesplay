@@ -68829,6 +68829,18 @@
               Xh,
               [
                 {
+                  id: "7fafd96f01c9438d642e11447ee8619700000000000000000000000000000000",
+                  group: "0.6.0",
+                  trackMetadata: {
+                    name: "What is Will doing?!?!",
+                    author: "Carson",
+                    lastModified: null,
+                  },
+                  environment: tl.A.Summer,
+                  trackUrl: "tracks/community/00_what_is_will_doing.track",
+                  thumbnail: "images/car_thumbnail_placeholder.png",
+                },
+                {
                   id: "64bf7efaed2a47dfb03a6b152e3aef637ac251b68a725a28352f3376ff1384d7",
                   group: "0.6.0",
                   trackMetadata: {
