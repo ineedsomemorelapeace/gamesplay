@@ -1,7 +1,7 @@
-/* PolyTrack direct multiplayer helper.
- * Peer-to-peer WebRTC mesh with copy/paste signaling codes. No room server.
- * The game bundle must call PolyTrackDirect.send(type, payload) and subscribe
- * to PolyTrackDirect.onMessage(callback) to route actual race state through it.
+/* PolyTrack serverless multiplayer bridge.
+ * Replaces PolyTrack's host/join signaling WebSockets and ICE-server lookup
+ * with manually exchanged, readable offer/answer codes. The original game
+ * still owns the WebRTC data channels and race-state protocol.
  */
 (() => {
   "use strict";
