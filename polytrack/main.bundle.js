@@ -68829,6 +68829,18 @@
               Xh,
               [
                 {
+                  id: "b4c2e91a7f604d3e9a82c1f07b6d5e4a00000000000000000000000000000000",
+                  group: "0.6.0",
+                  trackMetadata: {
+                    name: "El Teach",
+                    author: "Carson",
+                    lastModified: null,
+                  },
+                  environment: tl.A.Summer,
+                  trackUrl: "tracks/community/el-teach.track",
+                  thumbnail: "images/car_thumbnail_placeholder.png",
+                },
+                {
                   id: "7fafd96f01c9438d642e11447ee8619700000000000000000000000000000000",
                   group: "0.6.0",
                   trackMetadata: {
