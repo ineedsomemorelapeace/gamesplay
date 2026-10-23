@@ -64,8 +64,6 @@
     });
     custom.addEventListener("click", () => container.classList.remove("open"));
     community.addEventListener("click", () => container.classList.remove("open"));
-    const official = document.querySelector(".button.official");
-    if (official) official.addEventListener("click", () => container.classList.remove("open"));
     async function loadTracks() {
       list.innerHTML = '<div class="carson-track-empty">Loading Carson tracks…</div>';
       try {
