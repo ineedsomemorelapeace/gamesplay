@@ -4,17 +4,19 @@
   const FORM = "https://forms.gle/yFXbuVSDimBbD9fz5";
   const style = document.createElement("style");
   style.textContent = `
-    .button.carson .cover { background-size:cover; background-position:center; }
+    .button.carson { position:relative; background-size:cover; background-position:center; }
+    .button.carson .cover { position:absolute; inset:0; background-size:cover!important; background-position:center!important; }
+    .button.carson > span { position:relative; z-index:1; }
     .carson-tracks-container { display:none; }
     .carson-tracks-container.open { display:block; }
-    .carson-tracks-toolbar { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:12px 0; }
-    .carson-tracks-submit { border:1px solid var(--ui-color,#aaa); border-radius:6px; padding:9px 14px; color:inherit; background:rgba(255,255,255,.08); font:inherit; cursor:pointer; }
-    .carson-tracks-submit:hover { background:rgba(255,255,255,.16); }
-    .carson-track-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
-    .carson-track-card { padding:0; overflow:hidden; border:0; border-radius:8px; background:rgba(255,255,255,.06); color:inherit; text-align:left; font:inherit; }
-    .carson-track-card img { width:100%; aspect-ratio:16/9; object-fit:cover; display:block; }
-    .carson-track-card span { display:block; padding:10px; }
-    .carson-track-empty { opacity:.75; padding:20px; }
+    .carson-tracks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 4px 16px; border-bottom:3px solid rgba(210,225,255,.35); margin:0 4px 22px; }
+    .carson-tracks-heading { margin:0; font-size:clamp(22px,2.2vw,34px); font-weight:700; line-height:1.2; }
+    .carson-tracks-submit { flex:0 0 auto; border:1px solid rgba(220,230,255,.65); border-radius:5px; padding:10px 16px; color:inherit; background:rgba(20,35,75,.65); font:inherit; cursor:pointer; }
+    .carson-tracks-submit:hover { background:rgba(50,70,125,.85); }
+    .carson-track-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:18px; padding:0 4px 24px; }
+    .carson-track-empty { grid-column:1/-1; padding:16px 4px; font-size:16px; opacity:.85; }
+    .carson-tracks-container .track { cursor:pointer; }
+    @media(max-width:600px) { .carson-tracks-toolbar { align-items:flex-start; flex-wrap:wrap; } .carson-track-list { grid-template-columns:repeat(auto-fill,minmax(135px,1fr)); gap:10px; } }
   `;
   document.head.appendChild(style);
   let installed = false;
@@ -32,8 +34,10 @@
     button.innerHTML = '<span>Carson Tracks</span>';
     const cover = document.createElement("div");
     cover.className = "cover";
-    const officialCover = document.querySelector(".button.official .cover");
+    const official = document.querySelector(".button.official");
+    const officialCover = official && official.querySelector(".cover");
     if (officialCover) { const cs = getComputedStyle(officialCover); cover.style.backgroundImage = cs.backgroundImage; cover.style.backgroundPosition = cs.backgroundPosition; cover.style.backgroundSize = cs.backgroundSize; }
+    else if (official) { const cs = getComputedStyle(official); button.style.backgroundImage = cs.backgroundImage; button.style.backgroundPosition = cs.backgroundPosition; button.style.backgroundSize = cs.backgroundSize; }
     button.prepend(cover);
     tabs.insertBefore(button, custom);
     const container = document.createElement("div");
@@ -41,9 +45,9 @@
     customContainer.parentElement.insertBefore(container, customContainer);
     const toolbar = document.createElement("div");
     toolbar.className = "carson-tracks-toolbar";
-    const heading = document.createElement("strong");
+    const heading = document.createElement("h2");
+    heading.className = "carson-tracks-heading";
     heading.textContent = "Carson Tracks";
-    heading.style.marginRight = "auto";
     const submit = document.createElement("button");
     submit.className = "carson-tracks-submit";
     submit.textContent = "Add your own track!";
@@ -91,7 +95,7 @@
             console.warn("Could not load Carson track:", file.name, error);
           }
         }
-        if (!list.querySelector(".track")) list.innerHTML = '<div class="carson-track-empty">No valid Carson tracks yet.</div>';
+        if (!list.children.length) list.innerHTML = '<div class="carson-track-empty">No valid Carson tracks yet.</div>';
       } catch (error) {
         list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks. Try again later.</div>';
       }
