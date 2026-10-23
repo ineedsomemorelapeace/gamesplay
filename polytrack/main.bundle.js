@@ -14972,7 +14972,7 @@
           (q = function (e, t, n, r, a, s, o, l = null) {
             window.__carsonTrackRender = (metadata, environment, trackData, target) => {
               const id = trackData.getId(), thumbnail = trackData.createThumbnail();
-              q.call(this, "community", null, metadata, environment, () => Promise.resolve(trackData), id, thumbnail);
+              q.call(this, "community", null, metadata, environment, trackData, id, thumbnail);
               const communityContainer = (0, i.gn)(this, L, "f");
               if (communityContainer.lastElementChild) target.appendChild(communityContainer.lastElementChild);
             };
