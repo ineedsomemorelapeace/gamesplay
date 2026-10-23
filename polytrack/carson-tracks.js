@@ -1,11 +1,10 @@
 /* Carson Tracks extension for the PolyTrack selection screen. */
 (() => {
   const API = "https://api.github.com/repos/ineedsomemorelapeace/gamesplay/contents/polytrack/tracks/carson";
-  const RAW = "https://raw.githubusercontent.com/ineedsomemorelapeace/gamesplay/main/polytrack/tracks/carson/";
   const FORM = "https://forms.gle/yFXbuVSDimBbD9fz5";
   const style = document.createElement("style");
   style.textContent = `
-    .button.carson .cover { background-image: url("images/official_tracks.jpg"); }
+    .button.carson .cover { background-size:cover; background-position:center; }
     .carson-tracks-container { display:none; }
     .carson-tracks-container.open { display:block; }
     .carson-tracks-toolbar { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding:12px 0; }
@@ -33,6 +32,8 @@
     button.innerHTML = '<span>Carson Tracks</span>';
     const cover = document.createElement("div");
     cover.className = "cover";
+    const officialCover = document.querySelector(".button.official .cover");
+    if (officialCover) { const cs = getComputedStyle(officialCover); cover.style.backgroundImage = cs.backgroundImage; cover.style.backgroundPosition = cs.backgroundPosition; cover.style.backgroundSize = cs.backgroundSize; }
     button.prepend(cover);
     tabs.insertBefore(button, custom);
     const container = document.createElement("div");
@@ -72,18 +73,25 @@
           list.innerHTML = '<div class="carson-track-empty">No Carson tracks yet.</div>';
           return;
         }
-        for (const file of files) {
-          const card = document.createElement("div");
-          card.className = "carson-track-card";
-          const img = document.createElement("img");
-          img.alt = "";
-          img.src = "images/car_thumbnail_placeholder.png";
-          const title = document.createElement("span");
-          title.textContent = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
-          card.append(img, title);
-          card.title = "Track file detected. Track loading will be available when connected to the game's track parser.";
-          list.appendChild(card);
+        if (typeof window.__carsonParseTrack !== "function" || typeof window.__carsonTrackRender !== "function") {
+          list.innerHTML = '<div class="carson-track-empty">PolyTrack is still initializing. Reopen Carson Tracks to retry.</div>';
+          return;
         }
+        for (const file of files) {
+          try {
+            const response = await fetch(file.download_url, { cache: "no-store" });
+            if (!response.ok) continue;
+            const exported = await response.text();
+            const parsed = window.__carsonParseTrack(exported);
+            if (!parsed || !parsed.trackMetadata || !parsed.trackData) continue;
+            parsed.trackMetadata.name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
+            const environment = parsed.trackData.environment ?? 0;
+            window.__carsonTrackRender(parsed.trackMetadata, environment, parsed.trackData, list);
+          } catch (error) {
+            console.warn("Could not load Carson track:", file.name, error);
+          }
+        }
+        if (!list.querySelector(".track")) list.innerHTML = '<div class="carson-track-empty">No valid Carson tracks yet.</div>';
       } catch (error) {
         list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks. Try again later.</div>';
       }
