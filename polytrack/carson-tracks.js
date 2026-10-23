@@ -9,10 +9,11 @@
     .button.carson > span { position:relative; z-index:1; }
     .carson-tracks-container { display:none; }
     .carson-tracks-container.open { display:block; }
-    .carson-tracks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 4px 16px; border-bottom:3px solid rgba(210,225,255,.35); margin:0 4px 22px; }
-    .carson-tracks-heading { margin:0; font-size:clamp(22px,2.2vw,34px); font-weight:700; line-height:1.2; }
-    .carson-tracks-submit { flex:0 0 auto; border:1px solid rgba(220,230,255,.65); border-radius:5px; padding:10px 16px; color:inherit; background:rgba(20,35,75,.65); font:inherit; cursor:pointer; }
-    .carson-tracks-submit:hover { background:rgba(50,70,125,.85); }
+    .carson-tracks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 4px 12px; border-bottom:4px solid rgba(180,198,232,.48); margin:0 4px 22px; }
+    .carson-tracks-heading { margin:0; color:#f4f7ff; text-shadow:0 2px 3px rgba(0,0,0,.45); font-size:clamp(22px,2.2vw,34px); font-weight:700; line-height:1.2; }
+    .carson-tracks-submit { display:inline-flex; align-items:center; justify-content:center; gap:9px; flex:0 0 auto; border:0; border-radius:0; min-height:42px; padding:7px 15px; color:#f7f8ff; background:#17254f; box-shadow:inset 0 0 0 1px rgba(190,210,255,.12); font:inherit; font-size:clamp(16px,1.6vw,24px); font-weight:700; text-shadow:0 1px 2px rgba(0,0,0,.5); cursor:pointer; clip-path:polygon(8% 0,100% 0,92% 100%,0 100%); }
+    .carson-tracks-submit::before { content:"⇧"; font-family:Arial,sans-serif; font-size:1.25em; line-height:1; }
+    .carson-tracks-submit:hover { background:#263d78; }
     .carson-track-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:18px; padding:0 4px 24px; }
     .carson-track-empty { grid-column:1/-1; padding:16px 4px; font-size:16px; opacity:.85; }
     .carson-tracks-container .track { cursor:pointer; }
