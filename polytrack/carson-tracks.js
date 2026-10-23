@@ -66,7 +66,7 @@
       try {
         const response = await fetch(API, { cache: "no-store" });
         if (!response.ok) throw new Error("Track folder not available yet");
-        const files = (await response.json()).filter(f => f.type === "file" && f.name.endsWith(".track")).sort((a,b) => a.name.localeCompare(b.name));
+        const files = (await response.json()).filter(f => f.type === "file" && f.name.endsWith(".track") && f.name.toLowerCase() !== "a.track" && f.size > 0).sort((a,b) => a.name.localeCompare(b.name));
         list.replaceChildren();
         if (!files.length) {
           list.innerHTML = '<div class="carson-track-empty">No Carson tracks yet.</div>';
@@ -77,7 +77,7 @@
           card.className = "carson-track-card";
           const img = document.createElement("img");
           img.alt = "";
-          img.src = "images/official_tracks.jpg";
+          img.src = "images/car_thumbnail_placeholder.png";
           const title = document.createElement("span");
           title.textContent = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
           card.append(img, title);
