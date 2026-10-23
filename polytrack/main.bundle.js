@@ -68753,7 +68753,6 @@
             })
           );
         }),
-        window.__carsonParseTrack = (text) => ol.A.fromExportString(text);
         (id = function (e) {
           return new Promise((t, n) => {
             const i = new XMLHttpRequest();
@@ -68795,6 +68794,7 @@
         (ad = function () {
           for (const e of (0, C.gn)(this, ed, "f")) e();
         }));
+      window.__carsonParseTrack = (text) => ol.A.fromExportString(text);
       const sd = class {
         constructor(e, t) {
           (Qh.add(this),
