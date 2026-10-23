@@ -14970,6 +14970,13 @@
           (K = new WeakMap()),
           (v = new WeakSet()),
           (q = function (e, t, n, r, a, s, o, l = null) {
+            window.__carsonTrackRender = (metadata, environment, trackData, target) => {
+              const id = trackData.getId(), thumbnail = trackData.createThumbnail();
+              const entry = { id, trackMetadata: metadata, trackData, environment, thumbnail };
+              q.call(this, "community", null, metadata, environment, () => Promise.resolve(entry), id, thumbnail);
+              const communityContainer = (0, i.gn)(this, L, "f");
+              if (communityContainer.lastElementChild) target.appendChild(communityContainer.lastElementChild);
+            };
             const c = document.createElement("div");
             let h, d;
             switch (((c.className = "track"), e)) {
@@ -68746,6 +68753,7 @@
             })
           );
         }),
+        window.__carsonParseTrack = (text) => ol.A.fromExportString(text);
         (id = function (e) {
           return new Promise((t, n) => {
             const i = new XMLHttpRequest();
