@@ -200,7 +200,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       this.readyState = 3;
       const channel = this.channel;
       this.channel = null;
-      if (channel) client.removeChannel(channel).catch(() => {});
+      if (channel && this.role === "join") {
+        channel.send({
+          type: "broadcast", event: "join-message",
+          payload: { peerId: this.peerId, data: { type: "joinDisconnect" }, at: Date.now() }
+        }).catch(() => {}).finally(() => client.removeChannel(channel).catch(() => {}));
+      } else if (channel) {
+        client.removeChannel(channel).catch(() => {});
+      }
       this.emit("close");
     }
   }
