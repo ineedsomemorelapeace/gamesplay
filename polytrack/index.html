@@ -48,9 +48,26 @@
       };
     </script>
     <script defer="defer" src="error_screen.bundle.js"></script>
-    <script type="module" src="supabase-backend.js"></script>
-    <script defer="defer" src="main.bundle.js"></script>
-    <script defer="defer" src="carson-tracks.js"></script>
+    <script type="module">
+      // Wait for the Supabase bridge to finish loading before PolyTrack starts
+      // making leaderboard requests; otherwise the first requests can escape interception.
+      (async () => {
+        try {
+          await import("./supabase-backend.js");
+        } catch (error) {
+          console.error("PolyTrack Supabase bridge failed to load:", error);
+        }
+        const loadScript = src => new Promise(resolve => {
+          const script = document.createElement("script");
+          script.src = src;
+          script.onload = () => resolve(true);
+          script.onerror = () => { console.error("Failed to load " + src); resolve(false); };
+          document.head.appendChild(script);
+        });
+        await loadScript("main.bundle.js");
+        await loadScript("carson-tracks.js");
+      })();
+    </script>
     <script src="/assets/theme-loader.js"></script>
   <title>Dashboard | RapidIdentity</title>
   <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
