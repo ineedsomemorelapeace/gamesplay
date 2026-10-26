@@ -131,7 +131,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         version: "0.6.0", type: "joinInvite", session,
         offer: data.offer, mods: Array.isArray(data.mods) ? data.mods : [],
         isModsVanillaCompatible: data.isModsVanillaCompatible !== false,
-        nickname: typeof data.nickname === "string" ? data.nickname : null,
+        nickname: typeof data.nickname === "string" ? data.nickname : "Player",
         countryCode: typeof data.countryCode === "string" ? data.countryCode : null,
         carStyle: data.carStyle ?? null
       });
