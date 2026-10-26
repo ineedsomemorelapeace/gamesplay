@@ -10,14 +10,14 @@ No Node.js server is required. Supabase Realtime is the signaling transport; the
 
 ## Leaderboard data
 
-The `public.polytrack_times` table stores submissions, replay JSON, customization, car data, and review status. New submissions are always `waiting`; approved times use `yes`, rejected times use `no`. Rows are not automatically deleted. The public browser client cannot update review status or delete rows.
+The `public.polytrack_times` table stores submissions, replay data, customization, car data, and review status. New submissions are always `waiting`; approved times use `yes`, rejected/fake times use `no`. The anonymous Supabase role can read pending and approved rows and insert pending rows without an account. Rejected rows are hidden from public reads. Public clients cannot update review status or delete rows; records are retained unless an admin manually removes them.
 
 The backend exposes:
 - `window.polytrackBackend.submitTime({trackName,timeMs,playerName,replay,customization,carData})`
-- `window.polytrackBackend.getTimes(trackName,{verifiedOnly:true})`
+- `window.polytrackBackend.getTimes(trackName,{verifiedOnly:false})` (includes pending and approved times by default)
 - `window.polytrackBackend.getPendingReviews()`
 
-The game still needs to dispatch `polytrack:run-finished` with those values for finish times to be recorded; the multiplayer signaling bridge does not infer race finishes on its own.
+The legacy leaderboard API is intercepted for both reads and submissions. Submissions are stored as pending, and the leaderboard shows pending + approved records while hiding rejected records. Before returning the leaderboard, the bridge makes a best-effort scan of localStorage and IndexedDB for a saved replay/time matching that track and imports it once as pending. This only works when the browser's saved record contains a matching track identifier, frame count, and replay string. The optional `polytrack:run-finished` event remains available for integrations outside the legacy API.
 
 ## Admin review
 
