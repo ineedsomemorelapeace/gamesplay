@@ -265,6 +265,84 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     }
   };
 
+  // Bridge the original PolyTrack leaderboard HTTP API to Supabase too.
+  // The game requests /leaderboard directly; multiplayer signaling alone does not replace it.
+  async function handleLeaderboardRequest(url, method, bodyText = "") {
+    const parsedUrl = new URL(String(url), location.href);
+    const params = parsedUrl.searchParams;
+    const methodUpper = String(method || "GET").toUpperCase();
+
+    if (methodUpper === "GET") {
+      const trackId = params.get("trackId");
+      if (!trackId) return { status: 400, body: { error: "Missing trackId" } };
+      let query = client.from("polytrack_times")
+        .select("id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at")
+        .eq("track_slug", slugify(trackId))
+        .order("time_ms", { ascending: true })
+        .limit(100);
+      if (params.get("onlyVerified") === "true") query = query.eq("verification_status", "yes");
+      const { data, error } = await query;
+      if (error) throw error;
+      const entries = (data || []).map(row => ({
+        id: Number(row.id) || 0,
+        userId: "",
+        name: row.player_name || "Anonymous",
+        frames: Math.max(1, Math.round(Number(row.time_ms) * 60 / 1000)),
+        carColors: typeof row.car_data?.carColors === "string" ? row.car_data.carColors : "ffffffffffffffffffffffff"
+      }));
+      return { status: 200, body: { total: entries.length, entries } };
+    }
+
+    if (methodUpper === "POST") {
+      const form = new URLSearchParams(bodyText);
+      const trackId = form.get("trackId");
+      const frames = Number(form.get("frames"));
+      const playerName = (form.get("name") || "Anonymous").slice(0, 40);
+      const timeMs = Math.round(frames * 1000 / 60);
+      if (!trackId || !Number.isFinite(frames) || frames <= 0 || !Number.isFinite(timeMs)) {
+        return { status: 400, body: { error: "Invalid leaderboard submission" } };
+      }
+      const carColors = form.get("carColors") || "";
+      const replay = form.get("recording") || null;
+      const { error } = await client.from("polytrack_times").insert({
+        track_slug: slugify(trackId),
+        track_name: String(trackId).slice(0, 120),
+        player_name: playerName || "Anonymous",
+        time_ms: timeMs,
+        replay,
+        customization: {},
+        car_data: { carColors },
+        verification_status: "waiting"
+      });
+      if (error) throw error;
+      // The original game accepts a numeric upload ID or null as a successful response.
+      return { status: 200, body: null };
+    }
+
+    return { status: 405, body: { error: "Method not supported" } };
+  }
+
+  const NativeFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init = {}) {
+    const url = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
+    if (url && url.includes("vps.kodub.com") && new URL(url, location.href).pathname.endsWith("/leaderboard")) {
+      try {
+        const response = await handleLeaderboardRequest(url, init.method || input?.method || "GET", init.body || "");
+        return new Response(JSON.stringify(response.body), {
+          status: response.status,
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (error) {
+        console.error("PolyTrack Supabase leaderboard request failed:", error);
+        return new Response(JSON.stringify({ error: error?.message || "Leaderboard request failed" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+    return NativeFetch(input, init);
+  };
+
   const backend = {
     client, slugify,
     async submitTime({ trackName, timeMs, playerName = "Anonymous", replay = null, customization = {}, carData = {} }) {
