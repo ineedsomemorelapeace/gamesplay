@@ -16,6 +16,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   const BACKEND_HOST = "pt0-6-0b1-mp-backend.htmlpolytrack.workers.dev";
   const slugify = value => String(value || "unnamed-track").normalize("NFKD")
     .toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "unnamed_track";
+  // Use one canonical identity rule for every built-in, community, custom, and Carson track.
+  // Retain raw/decoded aliases so older saved rows remain discoverable after URL encoding changes.
+  function trackIdentityCandidates(value) {
+    const raw = String(value ?? "").trim();
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch {}
+    return [...new Set([raw, decoded].filter(Boolean))];
+  }
   const id = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   const inviteCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)),
     n => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n % 32]).join("");
@@ -425,19 +433,37 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     if (methodUpper === "GET") {
       const trackId = params.get("trackId");
       if (!trackId) return { status: 400, body: { error: "Missing trackId" } };
+      const identities = trackIdentityCandidates(trackId);
+      const slugCandidates = [...new Set(identities.map(slugify))];
+      const rawCandidates = [...new Set(identities)];
       // Never block the leaderboard on a best-effort localStorage/IndexedDB scan.
       // Some browsers can stall IndexedDB enumeration; import in the background instead.
       void importLocalBestForTrack(trackId).catch(error => console.debug("Local best import skipped:", error));
       const skip = Math.max(0, Number.parseInt(params.get("skip") || "0", 10) || 0);
       const amount = Math.max(1, Math.min(100, Number.parseInt(params.get("amount") || "10", 10) || 10));
-      const { data, error, count } = await client.from("polytrack_times")
-        .select("id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at", { count: "exact" })
-        .eq("track_slug", slugify(trackId))
-        // RLS exposes only pending + approved rows; rejected/fake rows are excluded server-side.
-        .in("verification_status", ["waiting", "yes"])
+      const selectColumns = "id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at";
+      const visibleStatuses = ["waiting", "yes"];
+      // First match canonical slugs (the normal path for all track sections).
+      let { data, error, count } = await client.from("polytrack_times")
+        .select(selectColumns, { count: "exact" })
+        .in("track_slug", slugCandidates)
+        .in("verification_status", visibleStatuses)
         .order("time_ms", { ascending: true })
         .range(skip, skip + amount - 1);
       if (error) throw error;
+      // Backward compatibility for records written by older bridge versions where track_name
+      // retained the un-normalized track ID instead of its canonical slug.
+      if ((!data || data.length === 0) && skip === 0) {
+        const legacy = await client.from("polytrack_times")
+          .select(selectColumns, { count: "exact" })
+          .in("track_name", rawCandidates)
+          .in("verification_status", visibleStatuses)
+          .order("time_ms", { ascending: true })
+          .range(skip, skip + amount - 1);
+        if (legacy.error) throw legacy.error;
+        if (legacy.data?.length) ({ data, count } = legacy);
+      }
+      console.debug("PolyTrack leaderboard identity:", { requested: trackId, slugs: slugCandidates, rows: data?.length || 0, total: count || 0 });
       const entries = (data || []).map(row => ({
         id: Number(row.id) || 0,
         userId: "",
