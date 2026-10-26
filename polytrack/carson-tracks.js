@@ -103,30 +103,47 @@
           list.innerHTML = '<div class="carson-track-empty">PolyTrack is still initializing. Reopen Carson Tracks to retry.</div>';
           return;
         }
+        const failures = [];
         for (const file of files) {
           try {
             const fileResponse = await fetch(file.download_url, { cache: "no-store" });
-            if (!fileResponse.ok) continue;
-            const parsed = window.__carsonParseTrack(await fileResponse.text());
-            if (!parsed || !parsed.trackMetadata || !parsed.trackData) continue;
-            const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
-            parsed.trackMetadata.name = name;
-
-            // PolyTrack stores personal records by track ID. Give Carson tracks a stable,
-            // unique ID based on the filename so records survive reloads and completions.
-            const stableId = "carson-" + file.name.replace(/\.track$/i, "").toLowerCase();
+            if (!fileResponse.ok) throw new Error("Download failed (" + fileResponse.status + ")");
+            const exported = (await fileResponse.text()).replace(/^\\uFEFF/, "").trim();
+            const parsed = window.__carsonParseTrack(exported);
+            if (!parsed || !parsed.trackMetadata || !parsed.trackData) {
+              throw new Error("PolyTrack did not recognize this export format");
+            }
+            const name = file.name.replace(/\\.track$/i, "").replace(/_/g, " ");
+            try { parsed.trackMetadata.name = name; } catch (_) {}
+            const stableId = "carson-" + file.name.replace(/\\.track$/i, "").toLowerCase();
             try {
               Object.defineProperty(parsed.trackData, "getId", { configurable: true, value: () => stableId });
             } catch (_) {
-              parsed.trackData.getId = () => stableId;
+              try { parsed.trackData.getId = () => stableId; } catch (_) {}
             }
-            const environment = parsed.trackData.environment ?? 0;
-            window.__carsonTrackRender(parsed.trackMetadata, environment, parsed.trackData, list);
+            if (typeof parsed.trackData.getId !== "function" ||
+                typeof parsed.trackData.createThumbnail !== "function") {
+              throw new Error("Export is missing required track methods");
+            }
+            const before = list.children.length;
+            window.__carsonTrackRender(parsed.trackMetadata, parsed.trackData.environment ?? 0, parsed.trackData, list);
+            if (list.children.length === before) throw new Error("PolyTrack did not create a track card");
           } catch (error) {
-            console.warn("Could not load Carson track:", file.name, error);
+            console.error("Could not load Carson track:", file.name, error);
+            failures.push(file.name + ": " + (error?.message || "unknown error"));
           }
         }
-        if (!list.children.length) list.innerHTML = '<div class="carson-track-empty">No valid Carson tracks yet.</div>';
+        if (!list.children.length) {
+          const details = failures.length ? failures.slice(0, 3).join(" • ") : "No track cards were created.";
+          list.innerHTML = '<div class="carson-track-empty">Could not load any Carson tracks. ' +
+            details.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+            '</div>';
+        } else if (failures.length) {
+          const note = document.createElement("div");
+          note.className = "carson-track-empty";
+          note.textContent = failures.length + " track file(s) could not be loaded.";
+          list.appendChild(note);
+        }
       } catch (error) {
         console.error("Could not load Carson tracks:", error);
         list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks. Try again later.</div>';
