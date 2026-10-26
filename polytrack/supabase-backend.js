@@ -301,12 +301,70 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   };
 
   // Import local saved bests only when a stored replay can be matched to this exact track.
-  // This is best-effort: no guessed time is uploaded, and each import is marked locally once.
+  // No guessed time is uploaded; a successful import is marked locally to prevent duplicates.
   const importedLocalBestKeys = new Set();
+  const scannedLocalBestKeys = new Set();
+  function collectLocalRecordCandidates(root, path, wanted, candidates) {
+    const stack = [{ value: root, path, depth: 0 }];
+    while (stack.length) {
+      const item = stack.pop();
+      if (!item.value || typeof item.value !== "object" || item.depth > 7) continue;
+      const value = item.value;
+      const frames = Number(value.frames ?? value.bestFrames ?? value.timeFrames);
+      const replay = value.recording ?? value.replay;
+      let identity = "";
+      try { identity = JSON.stringify(value); } catch {}
+      const matchesTrack = item.path.includes(wanted) || identity.includes(wanted);
+      if (matchesTrack && Number.isFinite(frames) && frames > 0 && frames <= 5999999 &&
+          typeof replay === "string" && replay.length > 0 && replay.length < 10000) {
+        candidates.push({ frames, replay, name: value.name || value.playerName || "Anonymous", carColors: value.carColors || "" });
+      }
+      for (const [childKey, child] of Object.entries(value)) {
+        if (child && typeof child === "object") stack.push({ value: child, path: item.path + "/" + childKey, depth: item.depth + 1 });
+      }
+    }
+  }
+  async function scanIndexedDbForLocalBest(wanted, candidates) {
+    if (!window.indexedDB || typeof indexedDB.databases !== "function") return;
+    let databases = [];
+    try { databases = await indexedDB.databases(); } catch { return; }
+    for (const info of databases) {
+      if (!info.name) continue;
+      let db;
+      try {
+        db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(info.name);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+          request.onblocked = () => reject(new Error("IndexedDB open blocked"));
+        });
+        for (const storeName of Array.from(db.objectStoreNames)) {
+          const records = await new Promise((resolve, reject) => {
+            const tx = db.transaction(storeName, "readonly");
+            const store = tx.objectStore(storeName);
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error);
+          });
+          for (let i = 0; i < records.length; i++) {
+            collectLocalRecordCandidates(records[i], info.name + "/" + storeName + "/" + i, wanted, candidates);
+          }
+        }
+      } catch (error) {
+        console.debug("Could not scan local PolyTrack database:", info.name, error);
+      } finally {
+        try { db?.close(); } catch {}
+      }
+    }
+  }
   async function importLocalBestForTrack(trackId) {
     const wanted = String(trackId || "");
     if (!wanted) return;
-    let candidates = [];
+    const marker = "polytrack-supabase-imported:" + slugify(wanted);
+    if (importedLocalBestKeys.has(marker) || scannedLocalBestKeys.has(marker)) return;
+    try { if (localStorage.getItem(marker)) { scannedLocalBestKeys.add(marker); return; } } catch {}
+    scannedLocalBestKeys.add(marker);
+    const candidates = [];
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -314,33 +372,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         let raw;
         try { raw = localStorage.getItem(key); } catch { continue; }
         if (!raw || (!key.includes(wanted) && !raw.includes(wanted))) continue;
-        let parsed;
-        try { parsed = JSON.parse(raw); } catch { continue; }
-        const stack = [{ value: parsed, path: key, depth: 0 }];
-        while (stack.length) {
-          const item = stack.pop();
-          if (!item.value || typeof item.value !== "object" || item.depth > 5) continue;
-          const value = item.value;
-          const frames = Number(value.frames ?? value.bestFrames ?? value.timeFrames);
-          const replay = value.recording ?? value.replay;
-          const identity = JSON.stringify(value);
-          const matchesTrack = item.path.includes(wanted) || identity.includes(wanted);
-          if (matchesTrack && Number.isFinite(frames) && frames > 0 && frames <= 5999999 &&
-              typeof replay === "string" && replay.length > 0 && replay.length < 10000) {
-            candidates.push({ frames, replay, name: value.name || value.playerName || "Anonymous", carColors: value.carColors || "" });
-          }
-          for (const [childKey, child] of Object.entries(value)) {
-            if (child && typeof child === "object") stack.push({ value: child, path: item.path + "/" + childKey, depth: item.depth + 1 });
-          }
-        }
+        try { collectLocalRecordCandidates(JSON.parse(raw), key, wanted, candidates); } catch {}
       }
+      await scanIndexedDbForLocalBest(wanted, candidates);
     } catch (error) { console.debug("Local PolyTrack record scan skipped:", error); }
     if (!candidates.length) return;
     candidates.sort((a, b) => a.frames - b.frames);
     const best = candidates[0];
-    const marker = "polytrack-supabase-imported:" + slugify(wanted);
-    if (importedLocalBestKeys.has(marker)) return;
-    try { if (localStorage.getItem(marker)) return; } catch {}
     try {
       const { error } = await client.from("polytrack_times").insert({
         track_slug: slugify(wanted), track_name: wanted.slice(0, 120),
@@ -353,7 +391,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       importedLocalBestKeys.add(marker);
       try { localStorage.setItem(marker, "1"); } catch {}
       console.info("Imported saved PolyTrack personal best for", wanted);
-    } catch (error) { console.warn("Could not import saved PolyTrack personal best:", error); }
+    } catch (error) {
+      scannedLocalBestKeys.delete(marker);
+      console.warn("Could not import saved PolyTrack personal best:", error);
+    }
   }
 
   // Bridge PolyTrack's legacy leaderboard API to Supabase.
