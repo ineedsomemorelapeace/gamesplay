@@ -235,13 +235,48 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   window.XMLHttpRequest = class PolyTrackXHR extends NativeXHR {
     open(method, url, ...rest) {
       this.__polyTrackIceRequest = String(url).includes(BACKEND_HOST) && String(url).includes("/iceServers");
-      if (!this.__polyTrackIceRequest) return super.open(method, url, ...rest);
-      this.__polyTrackIceMethod = method;
-      this.__polyTrackIceUrl = url;
+      this.__polyTrackLeaderboardRequest = String(url).includes("vps.kodub.com") && new URL(String(url), location.href).pathname.endsWith("/leaderboard");
+      this.__polyTrackMethod = method;
+      this.__polyTrackUrl = url;
+      if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest) return super.open(method, url, ...rest);
     }
     send(body) {
-      if (!this.__polyTrackIceRequest) return super.send(body);
+      if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest) return super.send(body);
       const xhr = this;
+      if (this.__polyTrackLeaderboardRequest) {
+        Promise.resolve().then(async () => {
+          try {
+            const result = await handleLeaderboardRequest(this.__polyTrackUrl, this.__polyTrackMethod, typeof body === "string" ? body : "");
+            const text = JSON.stringify(result.body);
+            for (const [key, value] of Object.entries({
+              readyState: 4, status: result.status, statusText: result.status === 200 ? "OK" : "Error",
+              responseText: text, response: xhr.responseType === "json" ? result.body : text
+            })) {
+              try { Object.defineProperty(xhr, key, { configurable: true, value }); } catch {}
+            }
+            xhr.onreadystatechange?.();
+            xhr.dispatchEvent(new Event("readystatechange"));
+            xhr.onload?.(new Event("load"));
+            xhr.dispatchEvent(new Event("load"));
+            xhr.onloadend?.(new Event("loadend"));
+            xhr.dispatchEvent(new Event("loadend"));
+          } catch (error) {
+            console.error("PolyTrack Supabase leaderboard request failed:", error);
+            for (const [key, value] of Object.entries({
+              readyState: 4, status: 500, statusText: "Error", responseText: "{}", response: {}
+            })) {
+              try { Object.defineProperty(xhr, key, { configurable: true, value }); } catch {}
+            }
+            xhr.onreadystatechange?.();
+            xhr.dispatchEvent(new Event("readystatechange"));
+            xhr.onerror?.(new Event("error"));
+            xhr.dispatchEvent(new Event("error"));
+            xhr.onloadend?.(new Event("loadend"));
+            xhr.dispatchEvent(new Event("loadend"));
+          }
+        });
+        return;
+      }
       queueMicrotask(() => {
         try {
           for (const [key, value] of Object.entries({
