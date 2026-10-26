@@ -36,8 +36,9 @@
     const community = document.querySelector(".button.community");
     const custom = document.querySelector(".button.custom");
     const containers = [...document.querySelectorAll(".tracks-container:not(.carson-tracks-container)")];
-    if (!community || !custom || containers.length < 3) return;
-    const customContainer = containers[2];
+    if (!community || !custom || containers.length < 1) return;
+    // Anchor to the native Custom section; the game can expose a different number of containers during startup.
+    const customContainer = containers[containers.length - 1];
     const tabs = custom.parentElement;
     const button = document.createElement("button");
     button.className = "button carson";
@@ -156,8 +157,15 @@
         const files = (await response.json())
           .filter(f => f.type === "file" && f.name.toLowerCase().endsWith(".track") && f.name.toLowerCase() !== "a.track" && f.size > 0)
           .sort((a, b) => a.name.localeCompare(b.name));
+        // The game bundle creates these hooks asynchronously while initializing its track UI.
+        // Wait for them instead of caching a startup race as a failed preload.
+        const hookDeadline = Date.now() + 15000;
+        while ((typeof window.__carsonParseTrack !== "function" ||
+                typeof window.__carsonTrackRender !== "function") && Date.now() < hookDeadline) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
         if (typeof window.__carsonParseTrack !== "function" || typeof window.__carsonTrackRender !== "function") {
-          throw new Error("PolyTrack is still initializing");
+          throw new Error("PolyTrack track hooks did not initialize");
         }
         const results = await Promise.all(files.map(async file => {
           try { return { ok: true, value: await downloadTrack(file) }; }
@@ -193,9 +201,14 @@
         for (const item of result.tracks) {
           const { parsed } = item;
           const before = list.children.length;
-          window.__carsonTrackRender(parsed.trackMetadata, parsed.trackData.environment ?? 0, parsed.trackData, list);
-          if (list.children.length === before) {
-            result.failures.push(item.file.name + ": PolyTrack did not create a track card");
+          try {
+            window.__carsonTrackRender(parsed.trackMetadata, parsed.trackData.environment ?? 0, parsed.trackData, list);
+            if (list.children.length === before) {
+              result.failures.push(item.file.name + ": PolyTrack did not create a track card");
+            }
+          } catch (error) {
+            console.error("Could not render Carson track:", item.file.name, error);
+            result.failures.push(item.file.name + ": " + (error?.message || "render failed"));
           }
         }
 
