@@ -90,11 +90,11 @@
     let rendered = false;
     let preloadPromise = null;
 
-    async function fetchWithRetry(url, options = {}, attempts = 3) {
+    async function fetchWithRetry(url, options = {}, attempts = 2) {
       let lastError;
       for (let attempt = 0; attempt < attempts; attempt++) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000);
+        const timeout = setTimeout(() => controller.abort(), 4500);
         try {
           const response = await fetch(url, { ...options, signal: controller.signal, cache: "no-store" });
           if (!response.ok) throw new Error("HTTP " + response.status);
@@ -112,11 +112,11 @@
     async function downloadTrack(file) {
       let exported;
       try {
-        const response = await fetchWithRetry(file.download_url, {}, 2);
+        const response = await fetchWithRetry(file.download_url, {}, 1);
         exported = await response.text();
       } catch (directError) {
         // Safari/content filters can fail on raw.githubusercontent.com even when api.github.com works.
-        const response = await fetchWithRetry(API + "/" + encodeURIComponent(file.name), {
+        const response = await fetchWithRetry(API + "/" + encodeURIComponent(file.name) + "?ref=main", {
           headers: { Accept: "application/vnd.github+json" }
         });
         const apiFile = await response.json();
@@ -157,13 +157,13 @@
     function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        const response = await fetchWithRetry(API);
+        const response = await fetchWithRetry(API + "?ref=main", {}, 2);
         const files = (await response.json())
           .filter(f => f.type === "file" && f.name.toLowerCase().endsWith(".track") && f.name.toLowerCase() !== "a.track" && f.size > 0)
           .sort((a, b) => a.name.localeCompare(b.name));
         // The game bundle creates these hooks asynchronously while initializing its track UI.
         // Wait for them instead of caching a startup race as a failed preload.
-        const hookDeadline = Date.now() + 15000;
+        const hookDeadline = Date.now() + 10000;
         while ((typeof window.__carsonParseTrack !== "function" ||
                 typeof window.__carsonTrackRender !== "function") && Date.now() < hookDeadline) {
           await new Promise(resolve => setTimeout(resolve, 100));
