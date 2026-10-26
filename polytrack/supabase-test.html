@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PolyTrack Supabase Test</title>
+<style>
+:root{color-scheme:dark;font:16px system-ui;background:#0b1020;color:#edf2ff}
+body{max-width:760px;margin:32px auto;padding:0 16px}h1{font-size:26px}section{background:#151d32;border:1px solid #2a3857;border-radius:12px;padding:16px;margin:16px 0}
+label{display:block;margin:10px 0 5px}input,button{font:inherit;border-radius:8px;padding:10px;border:1px solid #3c4d72;background:#0e1629;color:inherit}input{width:100%;box-sizing:border-box}button{cursor:pointer;background:#263b68;margin:5px 4px 5px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#080d18;padding:12px;border-radius:8px;min-height:70px}.muted{opacity:.75;font-size:14px}
+</style>
+</head>
+<body>
+<h1>PolyTrack Supabase connection test</h1>
+<p class="muted">This page tests database access and Supabase Realtime only. It does not patch the compiled game's multiplayer automatically.</p>
+<section>
+<h2>1. Connection / leaderboard</h2>
+<label for="track">Track name</label><input id="track" value="Supabase Test Track">
+<label for="player">Player name</label><input id="player" value="Test Player" maxlength="40">
+<label for="time">Time (milliseconds)</label><input id="time" type="number" value="64231" min="1">
+<button id="save">Submit test time (waiting review)</button>
+<button id="load">Load verified times</button>
+<pre id="db">Ready to test.</pre>
+</section>
+<section>
+<h2>2. Realtime signaling test</h2>
+<p class="muted">Open this page in two tabs, enter the same room name, click Join in both, then send a message. The other tab should receive it.</p>
+<label for="room">Room name</label><input id="room" value="test-room">
+<label for="message">Message</label><input id="message" value="hello from another tab">
+<button id="join">Join room</button><button id="send" disabled>Send message</button><button id="leave" disabled>Leave room</button>
+<pre id="rt">Not connected.</pre>
+</section>
+<script type="module">
+import "./supabase-backend.js";
+const $=id=>document.getElementById(id);
+const db=msg=>{$("db").textContent=typeof msg==="string"?msg:JSON.stringify(msg,null,2)};
+const rt=msg=>{$("rt").textContent=typeof msg==="string"?msg:JSON.stringify(msg,null,2)};
+let room=null;
+window.addEventListener("polytrack:backend-ready",()=>db("Supabase client initialized. Try loading verified times."));
+$("save").onclick=async()=>{
+ try{
+  if(!window.polytrackBackend)throw Error("Backend is still loading; retry in a moment.");
+  const row=await window.polytrackBackend.submitTime({trackName:$("track").value,timeMs:Number($("time").value),playerName:$("player").value,customization:{test:true},carData:{test:true}});
+  db({message:"Submitted successfully; it stays waiting until an admin approves it.",row});
+ }catch(e){db("ERROR: "+(e.message||e))}
+};
+$("load").onclick=async()=>{
+ try{const rows=await window.polytrackBackend.getTimes($("track").value,{verifiedOnly:true});db(rows)}catch(e){db("ERROR: "+(e.message||e))}
+};
+$("join").onclick=async()=>{
+ try{
+  if(!window.polytrackBackend)throw Error("Backend is still loading; retry in a moment.");
+  room=await window.polytrackBackend.joinRoom($("room").value,{
+   "peer-join":p=>rt({event:"peer-join",payload:p}),
+   "peer-leave":p=>rt({event:"peer-leave",payload:p}),
+   signal:p=>rt({event:"signal",from:p.peerId,message:p.message})
+  });
+  $("join").disabled=true;$("send").disabled=false;$("leave").disabled=false;
+  rt({status:"Connected",peerId:room.peerId,room:room.room,instructions:"Open this page in another tab and join the same room."});
+ }catch(e){rt("ERROR: "+(e.message||e))}
+};
+$("send").onclick=async()=>{
+ try{await room.sendSignal({kind:"test-message",text:$("message").value,at:Date.now()});rt("Message broadcast. Keep this tab open; received messages will appear here when another peer sends one.")}catch(e){rt("ERROR: "+(e.message||e))}
+};
+$("leave").onclick=async()=>{
+ try{await room?.leave();room=null;$("join").disabled=false;$("send").disabled=true;$("leave").disabled=true;rt("Left room.")}catch(e){rt("ERROR: "+(e.message||e))}
+};
+</script>
+</body>
+</html>
