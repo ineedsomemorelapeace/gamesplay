@@ -526,7 +526,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       if (error) throw error;
       return data;
     },
-    async getTimes(trackName, { verifiedOnly = true, limit = 100 } = {}) {
+    async getTimes(trackName, { verifiedOnly = false, limit = 100 } = {}) {
       let query = client.from("polytrack_times").select("id,track_slug,track_name,player_name,time_ms,replay,customization,car_data,verification_status,created_at")
         .eq("track_slug", slugify(trackName)).order("time_ms", { ascending: true }).limit(Math.max(1, Math.min(500, Number(limit) || 100)));
       if (verifiedOnly) query = query.eq("verification_status", "yes");
