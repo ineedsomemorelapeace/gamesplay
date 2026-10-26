@@ -1,0 +1,106 @@
+/* PolyTrack shared backend for CarsonGames. Public client only; never put a service-role key here. */
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
+
+(() => {
+  const SUPABASE_URL = "https://dyomqhrsbyzcumxzvklw.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_0B53LkSMv6sGOH7adiPjgQ_s99Vubpb";
+  const client = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    realtime: { params: { eventsPerSecond: 10 } },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  });
+
+  const slugify = value => String(value || "unnamed-track")
+    .normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "").slice(0, 80) || "unnamed_track";
+
+  const backend = {
+    client,
+    slugify,
+
+    async submitTime({ trackName, timeMs, playerName = "Anonymous", replay = null,
+      customization = {}, carData = {} }) {
+      const name = String(trackName || "").trim().slice(0, 120);
+      const ms = Math.round(Number(timeMs));
+      if (!name || !Number.isFinite(ms) || ms <= 0 || ms >= 86400000) {
+        throw new Error("Track name and a valid finish time are required.");
+      }
+      const result = await client.from("polytrack_times").insert({
+        track_slug: slugify(name),
+        track_name: name,
+        player_name: String(playerName || "Anonymous").trim().slice(0, 40) || "Anonymous",
+        time_ms: ms,
+        replay: replay == null ? null : replay,
+        customization: customization && typeof customization === "object" ? customization : {},
+        car_data: carData && typeof carData === "object" ? carData : {},
+        verification_status: "waiting"
+      }).select("id,track_slug,track_name,player_name,time_ms,verification_status,created_at").single();
+      if (result.error) throw result.error;
+      return result.data;
+    },
+
+    async getTimes(trackName, { verifiedOnly = false, limit = 100 } = {}) {
+      let query = client.from("polytrack_times")
+        .select("id,track_slug,track_name,player_name,time_ms,replay,customization,car_data,verification_status,created_at")
+        .eq("track_slug", slugify(trackName))
+        .order("time_ms", { ascending: true })
+        .limit(Math.max(1, Math.min(500, Number(limit) || 100)));
+      if (verifiedOnly) query = query.eq("verification_status", "yes");
+      const { data, error } = await query;
+      if (error) throw error;
+      return data || [];
+    },
+
+    async getPendingReviews({ limit = 100 } = {}) {
+      const { data, error } = await client.from("polytrack_times")
+        .select("*").eq("verification_status", "waiting")
+        .order("created_at", { ascending: true }).limit(limit);
+      if (error) throw error;
+      return data || [];
+    },
+
+    // Signaling only: peers still establish the actual WebRTC connection themselves.
+    async joinRoom(roomName, handlers = {}) {
+      const room = slugify(roomName);
+      const channel = client.channel("polytrack-webrtc-" + room, {
+        config: { broadcast: { self: false, ack: true } }
+      });
+      for (const event of ["signal", "peer-join", "peer-leave"]) {
+        channel.on("broadcast", { event }, message => {
+          try { handlers[event]?.(message.payload); } catch (error) { console.error(error); }
+        });
+      }
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Supabase Realtime subscription timed out")), 12000);
+        channel.subscribe(status => {
+          if (status === "SUBSCRIBED") { clearTimeout(timeout); resolve(); }
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            clearTimeout(timeout); reject(new Error("Could not join signaling room: " + status));
+          }
+        });
+      });
+      await channel.send({ type: "broadcast", event: "peer-join", payload: { at: Date.now() } });
+      return {
+        sendSignal: payload => channel.send({ type: "broadcast", event: "signal", payload }),
+        leave: async () => {
+          await channel.send({ type: "broadcast", event: "peer-leave", payload: { at: Date.now() } });
+          await client.removeChannel(channel);
+        },
+        channel
+      };
+    }
+  };
+
+  window.polytrackBackend = backend;
+
+  // Optional integration point for the game: dispatch this event on a completed run.
+  // detail: {trackName,timeMs,playerName,replay,customization,carData}
+  window.addEventListener("polytrack:run-finished", async event => {
+    try {
+      const result = await backend.submitTime(event.detail || {});
+      window.dispatchEvent(new CustomEvent("polytrack:time-saved", { detail: result }));
+    } catch (error) {
+      console.error("Could not save PolyTrack time:", error);
+      window.dispatchEvent(new CustomEvent("polytrack:time-save-error", { detail: { message: error.message } }));
+    }
+  });
+})();
