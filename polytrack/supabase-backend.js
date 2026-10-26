@@ -246,7 +246,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       this.__polyTrackLeaderboardRequest = isLeaderboardUrl(url);
       this.__polyTrackMethod = method;
       this.__polyTrackUrl = url;
-      if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest) return super.open(method, url, ...rest);
+      // Always run native open(): PolyTrack's XHR helpers may inspect readyState or headers.
+      // We intercept send() below, so the old endpoint is never actually contacted.
+      return super.open(method, url, ...rest);
+    }
+    getResponseHeader(name) {
+      const headers = this.__polyTrackInterceptedResponseHeaders;
+      if (headers) return headers[String(name || "").toLowerCase()] ?? null;
+      return super.getResponseHeader(name);
+    }
+    getAllResponseHeaders() {
+      const headers = this.__polyTrackInterceptedResponseHeaders;
+      if (headers) return Object.entries(headers).map(([key, value]) => key + ": " + value + "\\r\\n").join("");
+      return super.getAllResponseHeaders();
     }
     send(body) {
       if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest) return super.send(body);
@@ -256,6 +268,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
           try {
             const result = await handleLeaderboardRequest(this.__polyTrackUrl, this.__polyTrackMethod, bodyToText(body));
             const text = JSON.stringify(result.body);
+            xhr.__polyTrackInterceptedResponseHeaders = {
+              "content-type": "application/json; charset=utf-8",
+              "content-length": String(new TextEncoder().encode(text).length)
+            };
             for (const [key, value] of Object.entries({
               readyState: 4, status: result.status, statusText: result.status === 200 ? "OK" : "Error",
               responseText: text, response: xhr.responseType === "json" ? result.body : text
@@ -269,6 +285,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
             xhr.dispatchEvent(new Event("loadend"));
           } catch (error) {
             console.error("PolyTrack Supabase leaderboard request failed:", error);
+            xhr.__polyTrackInterceptedResponseHeaders = { "content-type": "application/json; charset=utf-8" };
             for (const [key, value] of Object.entries({
               readyState: 4, status: 500, statusText: "Error", responseText: "{}", response: {}
             })) {
