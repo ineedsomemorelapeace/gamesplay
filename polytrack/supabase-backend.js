@@ -235,7 +235,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   window.XMLHttpRequest = class PolyTrackXHR extends NativeXHR {
     open(method, url, ...rest) {
       this.__polyTrackIceRequest = String(url).includes(BACKEND_HOST) && String(url).includes("/iceServers");
-      this.__polyTrackLeaderboardRequest = String(url).includes("vps.kodub.com") && new URL(String(url), location.href).pathname.endsWith("/leaderboard");
+      this.__polyTrackLeaderboardRequest = isLeaderboardUrl(url);
       this.__polyTrackMethod = method;
       this.__polyTrackUrl = url;
       if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest) return super.open(method, url, ...rest);
@@ -246,7 +246,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       if (this.__polyTrackLeaderboardRequest) {
         Promise.resolve().then(async () => {
           try {
-            const result = await handleLeaderboardRequest(this.__polyTrackUrl, this.__polyTrackMethod, typeof body === "string" ? body : "");
+            const result = await handleLeaderboardRequest(this.__polyTrackUrl, this.__polyTrackMethod, bodyToText(body));
             const text = JSON.stringify(result.body);
             for (const [key, value] of Object.entries({
               readyState: 4, status: result.status, statusText: result.status === 200 ? "OK" : "Error",
@@ -300,8 +300,78 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     }
   };
 
-  // Bridge the original PolyTrack leaderboard HTTP API to Supabase too.
-  // The game requests /leaderboard directly; multiplayer signaling alone does not replace it.
+  // Import local saved bests only when a stored replay can be matched to this exact track.
+  // This is best-effort: no guessed time is uploaded, and each import is marked locally once.
+  const importedLocalBestKeys = new Set();
+  async function importLocalBestForTrack(trackId) {
+    const wanted = String(trackId || "");
+    if (!wanted) return;
+    let candidates = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        let raw;
+        try { raw = localStorage.getItem(key); } catch { continue; }
+        if (!raw || (!key.includes(wanted) && !raw.includes(wanted))) continue;
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch { continue; }
+        const stack = [{ value: parsed, path: key, depth: 0 }];
+        while (stack.length) {
+          const item = stack.pop();
+          if (!item.value || typeof item.value !== "object" || item.depth > 5) continue;
+          const value = item.value;
+          const frames = Number(value.frames ?? value.bestFrames ?? value.timeFrames);
+          const replay = value.recording ?? value.replay;
+          const identity = JSON.stringify(value);
+          const matchesTrack = item.path.includes(wanted) || identity.includes(wanted);
+          if (matchesTrack && Number.isFinite(frames) && frames > 0 && frames <= 5999999 &&
+              typeof replay === "string" && replay.length > 0 && replay.length < 10000) {
+            candidates.push({ frames, replay, name: value.name || value.playerName || "Anonymous", carColors: value.carColors || "" });
+          }
+          for (const [childKey, child] of Object.entries(value)) {
+            if (child && typeof child === "object") stack.push({ value: child, path: item.path + "/" + childKey, depth: item.depth + 1 });
+          }
+        }
+      }
+    } catch (error) { console.debug("Local PolyTrack record scan skipped:", error); }
+    if (!candidates.length) return;
+    candidates.sort((a, b) => a.frames - b.frames);
+    const best = candidates[0];
+    const marker = "polytrack-supabase-imported:" + slugify(wanted);
+    if (importedLocalBestKeys.has(marker)) return;
+    try { if (localStorage.getItem(marker)) return; } catch {}
+    try {
+      const { error } = await client.from("polytrack_times").insert({
+        track_slug: slugify(wanted), track_name: wanted.slice(0, 120),
+        player_name: String(best.name || "Anonymous").slice(0, 40) || "Anonymous",
+        time_ms: Math.round(best.frames * 1000 / 60), replay: best.replay,
+        customization: {}, car_data: { carColors: /^[a-f0-9]{24}$/i.test(best.carColors) ? best.carColors : "ffffffffffffffffffffffff" },
+        verification_status: "waiting"
+      });
+      if (error) throw error;
+      importedLocalBestKeys.add(marker);
+      try { localStorage.setItem(marker, "1"); } catch {}
+      console.info("Imported saved PolyTrack personal best for", wanted);
+    } catch (error) { console.warn("Could not import saved PolyTrack personal best:", error); }
+  }
+
+  // Bridge PolyTrack's legacy leaderboard API to Supabase.
+  // The bridge accepts absolute and relative endpoint URLs and never requires a login.
+  function isLeaderboardUrl(value) {
+    try { return new URL(String(value), location.href).pathname.replace(/\/$/, "").endsWith("/leaderboard"); }
+    catch { return false; }
+  }
+
+  function bodyToText(body) {
+    if (typeof body === "string") return body;
+    if (body instanceof URLSearchParams) return body.toString();
+    if (body && typeof body === "object" && !(body instanceof FormData)) {
+      try { return new URLSearchParams(body).toString(); } catch {}
+    }
+    return "";
+  }
+
   async function handleLeaderboardRequest(url, method, bodyText = "") {
     const parsedUrl = new URL(String(url), location.href);
     const params = parsedUrl.searchParams;
@@ -310,48 +380,57 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     if (methodUpper === "GET") {
       const trackId = params.get("trackId");
       if (!trackId) return { status: 400, body: { error: "Missing trackId" } };
-      let query = client.from("polytrack_times")
-        .select("id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at")
+      await importLocalBestForTrack(trackId);
+      const skip = Math.max(0, Number.parseInt(params.get("skip") || "0", 10) || 0);
+      const amount = Math.max(1, Math.min(100, Number.parseInt(params.get("amount") || "10", 10) || 10));
+      const { data, error, count } = await client.from("polytrack_times")
+        .select("id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at", { count: "exact" })
         .eq("track_slug", slugify(trackId))
+        // RLS exposes only pending + approved rows; rejected/fake rows are excluded server-side.
+        .in("verification_status", ["waiting", "yes"])
         .order("time_ms", { ascending: true })
-        .limit(100);
-      if (params.get("onlyVerified") === "true") query = query.eq("verification_status", "yes");
-      const { data, error } = await query;
+        .range(skip, skip + amount - 1);
       if (error) throw error;
       const entries = (data || []).map(row => ({
         id: Number(row.id) || 0,
         userId: "",
         name: row.player_name || "Anonymous",
         frames: Math.max(1, Math.round(Number(row.time_ms) * 60 / 1000)),
-        carColors: typeof row.car_data?.carColors === "string" ? row.car_data.carColors : "ffffffffffffffffffffffff"
+        carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "")
+          ? row.car_data.carColors : "ffffffffffffffffffffffff"
       }));
-      return { status: 200, body: { total: entries.length, entries } };
+      return { status: 200, body: { total: Number(count) || 0, entries } };
     }
 
     if (methodUpper === "POST") {
       const form = new URLSearchParams(bodyText);
-      const trackId = form.get("trackId");
-      const frames = Number(form.get("frames"));
-      const playerName = (form.get("name") || "Anonymous").slice(0, 40);
+      let payload = null;
+      if (!form.has("trackId") && bodyText.trim().startsWith("{")) {
+        try { payload = JSON.parse(bodyText); } catch {}
+      }
+      const get = key => form.has(key) ? form.get(key) : payload?.[key];
+      const trackId = get("trackId");
+      const frames = Number(get("frames"));
+      const playerName = String(get("name") || "Anonymous").trim().slice(0, 40) || "Anonymous";
       const timeMs = Math.round(frames * 1000 / 60);
-      if (!trackId || !Number.isFinite(frames) || frames <= 0 || !Number.isFinite(timeMs)) {
+      if (!trackId || !Number.isFinite(frames) || frames <= 0 || frames > 5999999 ||
+          !Number.isSafeInteger(timeMs) || timeMs <= 0 || timeMs >= 86400000) {
         return { status: 400, body: { error: "Invalid leaderboard submission" } };
       }
-      const carColors = form.get("carColors") || "";
-      const replay = form.get("recording") || null;
-      const { error } = await client.from("polytrack_times").insert({
+      const carColors = String(get("carColors") || "");
+      const recording = get("recording");
+      const { data, error } = await client.from("polytrack_times").insert({
         track_slug: slugify(trackId),
         track_name: String(trackId).slice(0, 120),
-        player_name: playerName || "Anonymous",
+        player_name: playerName,
         time_ms: timeMs,
-        replay,
+        replay: typeof recording === "string" && recording ? recording : null,
         customization: {},
-        car_data: { carColors },
+        car_data: { carColors: /^[a-f0-9]{24}$/i.test(carColors) ? carColors : "ffffffffffffffffffffffff" },
         verification_status: "waiting"
-      });
+      }).select("id").single();
       if (error) throw error;
-      // The original game accepts a numeric upload ID or null as a successful response.
-      return { status: 200, body: null };
+      return { status: 200, body: Number(data.id) || null };
     }
 
     return { status: 405, body: { error: "Method not supported" } };
@@ -360,9 +439,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   const NativeFetch = window.fetch.bind(window);
   window.fetch = async function(input, init = {}) {
     const url = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
-    if (url && url.includes("vps.kodub.com") && new URL(url, location.href).pathname.endsWith("/leaderboard")) {
+    if (url && isLeaderboardUrl(url)) {
       try {
-        const response = await handleLeaderboardRequest(url, init.method || input?.method || "GET", init.body || "");
+        const method = init.method || input?.method || "GET";
+        let body = bodyToText(init.body);
+        if (!body && typeof Request !== "undefined" && input instanceof Request && method.toUpperCase() === "POST") {
+          body = await input.clone().text();
+        }
+        const response = await handleLeaderboardRequest(url, method, body);
         return new Response(JSON.stringify(response.body), {
           status: response.status,
           headers: { "Content-Type": "application/json" }
