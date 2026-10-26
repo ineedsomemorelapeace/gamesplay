@@ -342,12 +342,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
           const records = await new Promise((resolve, reject) => {
             const tx = db.transaction(storeName, "readonly");
             const store = tx.objectStore(storeName);
-            const request = store.getAll();
-            request.onsuccess = () => resolve(request.result || []);
-            request.onerror = () => reject(request.error);
+            const valuesRequest = store.getAll();
+            const keysRequest = store.getAllKeys();
+            tx.oncomplete = () => resolve({ values: valuesRequest.result || [], keys: keysRequest.result || [] });
+            tx.onerror = () => reject(tx.error);
+            valuesRequest.onerror = () => reject(valuesRequest.error);
+            keysRequest.onerror = () => reject(keysRequest.error);
           });
-          for (let i = 0; i < records.length; i++) {
-            collectLocalRecordCandidates(records[i], info.name + "/" + storeName + "/" + i, wanted, candidates);
+          for (let i = 0; i < records.values.length; i++) {
+            collectLocalRecordCandidates(
+              records.values[i],
+              info.name + "/" + storeName + "/" + String(records.keys[i] ?? i),
+              wanted,
+              candidates
+            );
           }
         }
       } catch (error) {
