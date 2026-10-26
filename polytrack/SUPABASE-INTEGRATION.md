@@ -2,17 +2,18 @@
 
 Project URL: `https://dyomqhrsbyzcumxzvklw.supabase.co`
 
-## Enable the client helper
+## Files and current status
 
-In `polytrack/index.html`, add this line after the existing `main.bundle.js` script and before `carson-tracks.js`:
+- `supabase-backend.js`: Supabase database API and Realtime signaling-room helper.
+- `supabase-test.html`: interactive test for database submissions and cross-tab Realtime signaling.
+- `supabase-admin-queries.sql`: SQL for approving/rejecting submitted times.
+- `index.html` already loads `supabase-backend.js` as a module.
 
-```html
-<script type="module" src="supabase-backend.js"></script>
-```
+## Test it
 
-It must be `type="module"` because it imports Supabase JS. After the page reloads, the helper is available as `window.polytrackBackend`.
+Open `supabase-test.html` from the deployed GitHub Pages site. Submit a test time; it must be stored as `waiting`. Open the test page in two tabs, join the same room name in both, and send a message from one tab. The other tab should receive it. Test times remain in the database until an admin reviews them.
 
-## Save a finish time (integration hook)
+## Finish-time event contract
 
 When the game detects a completed run, dispatch:
 
@@ -29,14 +30,16 @@ window.dispatchEvent(new CustomEvent("polytrack:run-finished", {
 }));
 ```
 
-The helper stores submissions as `waiting`; it never approves a player's own submission. To read only approved times, call `window.polytrackBackend.getTimes("Summer 1", { verifiedOnly: true })`.
+The helper stores the submission as `waiting`; players cannot approve their own times through the public client. The public leaderboard API defaults to verified-only results:
 
-## Multiplayer signaling API
+```js
+const times = await window.polytrackBackend.getTimes("Summer 1");
+```
 
-`window.polytrackBackend.joinRoom(roomName, handlers)` subscribes to a Supabase Realtime broadcast channel and returns `sendSignal(payload)` and `leave()`. This is signaling transport only: the existing game's multiplayer code must call it when its old room assignment/signaling client is created. Merely loading this file does not automatically replace the compiled game's current signaling backend.
+## Important multiplayer integration status
 
-The multiplayer transport needs the game code to send its existing signaling messages through `sendSignal` and process incoming `signal` messages using its existing WebRTC logic. Keep the game's current simulation, player synchronization, and UI unchanged.
+The Realtime room helper is working as a signaling transport API, but the compiled `main.bundle.js` multiplayer code has not yet been changed to call it. Loading the helper alone does not replace PolyTrack's existing room assignment/signaling service. To preserve the original gameplay correctly, the existing multiplayer room/peer signaling calls inside the game need to be adapted to `joinRoom(roomName, handlers)`, `sendSignal(payload)`, and `leave()`, while leaving the game's WebRTC and simulation handlers intact.
 
 ## Admin review
 
-Use the SQL snippets in `supabase-admin-queries.sql` from Supabase Dashboard -> SQL Editor to approve or reject submissions. Rejected and approved rows are retained. Do not expose a service-role key or create an unauthenticated admin page; that would let anyone falsify leaderboard verification.
+Use `supabase-admin-queries.sql` from Supabase Dashboard -> SQL Editor to approve (`yes`) or reject (`no`) submissions. Records are retained; no public UPDATE or DELETE permission is granted. Do not expose a service-role key or create an unauthenticated admin page, since that would let anyone falsify leaderboard verification.
