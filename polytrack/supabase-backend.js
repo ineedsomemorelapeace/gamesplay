@@ -185,8 +185,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         });
       }
       if (!this.channel) {
-        if (!message.inviteCode) return this.fail(new Error("Join invite code missing"));
-        return this.setupJoin(message).catch(e => this.fail(e));
+        if (message.inviteCode) {
+          if (!this.code) this.code = String(message.inviteCode).toUpperCase().replace(/[^A-Z0-9]/g, "");
+          return this.setupJoin(message).catch(e => this.fail(e));
+        }
+        if (this.code) { this.pendingSends.push(message); return; }
+        return this.fail(new Error("Join invite code missing"));
       }
       return this.sendJoinMessage(message);
     }
