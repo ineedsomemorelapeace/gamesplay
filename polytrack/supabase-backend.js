@@ -254,11 +254,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
             })) {
               try { Object.defineProperty(xhr, key, { configurable: true, value }); } catch {}
             }
-            xhr.onreadystatechange?.();
+            // dispatchEvent also invokes the onreadystatechange/onload IDL handlers.
+            // Calling those handlers manually as well fires each callback twice.
             xhr.dispatchEvent(new Event("readystatechange"));
-            xhr.onload?.(new Event("load"));
             xhr.dispatchEvent(new Event("load"));
-            xhr.onloadend?.(new Event("loadend"));
             xhr.dispatchEvent(new Event("loadend"));
           } catch (error) {
             console.error("PolyTrack Supabase leaderboard request failed:", error);
@@ -267,11 +266,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
             })) {
               try { Object.defineProperty(xhr, key, { configurable: true, value }); } catch {}
             }
-            xhr.onreadystatechange?.();
             xhr.dispatchEvent(new Event("readystatechange"));
-            xhr.onerror?.(new Event("error"));
             xhr.dispatchEvent(new Event("error"));
-            xhr.onloadend?.(new Event("loadend"));
             xhr.dispatchEvent(new Event("loadend"));
           }
         });
@@ -448,7 +444,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "")
           ? row.car_data.carColors : "ffffffffffffffffffffffff"
       }));
-      return { status: 200, body: { total: Number(count) || 0, entries } };
+      return { status: 200, body: { total: Number(count) || 0, entries, userEntry: null } };
     }
 
     if (methodUpper === "POST") {
