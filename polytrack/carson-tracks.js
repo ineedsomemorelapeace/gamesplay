@@ -136,7 +136,11 @@
 
       const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
       try { parsed.trackMetadata.name = name; } catch (_) {}
-      const stableId = "carson-" + file.name.replace(/\.track$/i, "").toLowerCase();
+      // Stable filename-based identity: every current and future Carson track gets the
+      // same ID on listing, submission, and leaderboard lookup, regardless of punctuation/case.
+      const stableName = file.name.replace(/\.track$/i, "").normalize("NFKD").toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+      const stableId = "carson-" + (stableName || "unnamed-track");
       try {
         Object.defineProperty(parsed.trackData, "getId", { configurable: true, value: () => stableId });
       } catch (_) {
