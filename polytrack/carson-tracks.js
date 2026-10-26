@@ -86,14 +86,35 @@
     community.addEventListener("click", () => container.classList.remove("open"));
     installed = true;
 
+    let loadRequest = 0;
+    async function fetchWithRetry(url, options = {}, attempts = 3) {
+      let lastError;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+        try {
+          const response = await fetch(url, { ...options, signal: controller.signal, cache: "no-store" });
+          if (!response.ok) throw new Error("HTTP " + response.status);
+          return response;
+        } catch (error) {
+          lastError = error;
+          if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
+      throw new Error("Request failed after " + attempts + " attempts: " + (lastError?.message || "network error"));
+    }
+
     async function loadTracks() {
+      const requestId = ++loadRequest;
       list.innerHTML = '<div class="carson-track-empty">Loading Carson tracks…</div>';
       try {
-        const response = await fetch(API, { cache: "no-store" });
-        if (!response.ok) throw new Error("Track folder not available yet");
+        const response = await fetchWithRetry(API);
         const files = (await response.json())
           .filter(f => f.type === "file" && f.name.toLowerCase().endsWith(".track") && f.name.toLowerCase() !== "a.track" && f.size > 0)
           .sort((a, b) => a.name.localeCompare(b.name));
+        if (requestId !== loadRequest) return;
         list.replaceChildren();
         if (!files.length) {
           list.innerHTML = '<div class="carson-track-empty">No Carson tracks yet.</div>';
@@ -108,16 +129,13 @@
           try {
             let exported;
             try {
-              const fileResponse = await fetch(file.download_url, { cache: "no-store" });
-              if (!fileResponse.ok) throw new Error("Direct download failed (" + fileResponse.status + ")");
+              const fileResponse = await fetchWithRetry(file.download_url, {}, 2);
               exported = await fileResponse.text();
             } catch (directError) {
               // Safari/content filters can fail on raw.githubusercontent.com even when api.github.com works.
-              const apiResponse = await fetch(API + "/" + encodeURIComponent(file.name), {
-                cache: "no-store",
+              const apiResponse = await fetchWithRetry(API + "/" + encodeURIComponent(file.name), {
                 headers: { Accept: "application/vnd.github+json" }
               });
-              if (!apiResponse.ok) throw new Error("Direct download and GitHub API fallback failed (" + apiResponse.status + ")");
               const apiFile = await apiResponse.json();
               if (!apiFile.content || apiFile.encoding !== "base64") {
                 throw new Error("GitHub API returned no base64 file content");
@@ -151,6 +169,7 @@
             failures.push(file.name + ": " + (error?.message || "unknown error"));
           }
         }
+        if (requestId !== loadRequest) return;
         if (!list.children.length) {
           const details = failures.length ? failures.slice(0, 3).join(" • ") : "No track cards were created.";
           list.innerHTML = '<div class="carson-track-empty">Could not load any Carson tracks. ' +
@@ -163,8 +182,9 @@
           list.appendChild(note);
         }
       } catch (error) {
+        if (requestId !== loadRequest) return;
         console.error("Could not load Carson tracks:", error);
-        list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks. Try again later.</div>';
+        list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks after retries. Tap Carson Tracks to try again.</div>';
       }
     }
   }
