@@ -425,7 +425,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     if (methodUpper === "GET") {
       const trackId = params.get("trackId");
       if (!trackId) return { status: 400, body: { error: "Missing trackId" } };
-      await importLocalBestForTrack(trackId);
+      // Never block the leaderboard on a best-effort localStorage/IndexedDB scan.
+      // Some browsers can stall IndexedDB enumeration; import in the background instead.
+      void importLocalBestForTrack(trackId).catch(error => console.debug("Local best import skipped:", error));
       const skip = Math.max(0, Number.parseInt(params.get("skip") || "0", 10) || 0);
       const amount = Math.max(1, Math.min(100, Number.parseInt(params.get("amount") || "10", 10) || 10));
       const { data, error, count } = await client.from("polytrack_times")
