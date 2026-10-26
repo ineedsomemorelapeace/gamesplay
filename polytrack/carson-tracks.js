@@ -108,14 +108,14 @@
           try {
             const fileResponse = await fetch(file.download_url, { cache: "no-store" });
             if (!fileResponse.ok) throw new Error("Download failed (" + fileResponse.status + ")");
-            const exported = (await fileResponse.text()).replace(/^\\uFEFF/, "").trim();
+            const exported = (await fileResponse.text()).replace(/^\uFEFF/, "").trim();
             const parsed = window.__carsonParseTrack(exported);
             if (!parsed || !parsed.trackMetadata || !parsed.trackData) {
               throw new Error("PolyTrack did not recognize this export format");
             }
-            const name = file.name.replace(/\\.track$/i, "").replace(/_/g, " ");
+            const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
             try { parsed.trackMetadata.name = name; } catch (_) {}
-            const stableId = "carson-" + file.name.replace(/\\.track$/i, "").toLowerCase();
+            const stableId = "carson-" + file.name.replace(/\.track$/i, "").toLowerCase();
             try {
               Object.defineProperty(parsed.trackData, "getId", { configurable: true, value: () => stableId });
             } catch (_) {
