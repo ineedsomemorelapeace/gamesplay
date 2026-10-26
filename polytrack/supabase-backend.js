@@ -489,7 +489,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "")
           ? row.car_data.carColors : "ffffffffffffffffffffffff"
       }));
-      return { status: 200, body: { total: Number(count) || 0, entries, userEntry: null } };
+      // Never report zero users when rows were returned but PostgREST omitted the count.
+      const total = count == null ? entries.length : Math.max(Number(count) || 0, entries.length);
+      return { status: 200, body: { total, entries, userEntry: null } };
     }
 
     if (methodUpper === "POST") {
@@ -501,7 +503,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const get = key => form.has(key) ? form.get(key) : payload?.[key];
       const trackId = get("trackId");
       const frames = Number(get("frames"));
-      const playerName = String(get("name") || "Anonymous").trim().slice(0, 40) || "Anonymous";
+      const playerName = String(
+        get("name") || get("playerName") || get("player_name") || get("username") || get("nickname") || "Anonymous"
+      ).trim().slice(0, 40) || "Anonymous";
       const timeMs = Math.round(frames * 1000 / 60);
       if (!trackId || !Number.isFinite(frames) || frames <= 0 || frames > 5999999 ||
           !Number.isSafeInteger(timeMs) || timeMs <= 0 || timeMs >= 86400000) {
