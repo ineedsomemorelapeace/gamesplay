@@ -86,7 +86,9 @@
     community.addEventListener("click", () => container.classList.remove("open"));
     installed = true;
 
-    let loadRequest = 0;
+    let rendered = false;
+    let preloadPromise = null;
+
     async function fetchWithRetry(url, options = {}, attempts = 3) {
       let lastError;
       for (let attempt = 0; attempt < attempts; attempt++) {
@@ -106,87 +108,117 @@
       throw new Error("Request failed after " + attempts + " attempts: " + (lastError?.message || "network error"));
     }
 
-    async function loadTracks() {
-      const requestId = ++loadRequest;
-      list.innerHTML = '<div class="carson-track-empty">Loading Carson tracks…</div>';
+    async function downloadTrack(file) {
+      let exported;
       try {
+        const response = await fetchWithRetry(file.download_url, {}, 2);
+        exported = await response.text();
+      } catch (directError) {
+        // Safari/content filters can fail on raw.githubusercontent.com even when api.github.com works.
+        const response = await fetchWithRetry(API + "/" + encodeURIComponent(file.name), {
+          headers: { Accept: "application/vnd.github+json" }
+        });
+        const apiFile = await response.json();
+        if (!apiFile.content || apiFile.encoding !== "base64") {
+          throw new Error("GitHub API returned no base64 file content");
+        }
+        const binary = atob(apiFile.content.replace(/\s/g, ""));
+        const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+        exported = new TextDecoder("utf-8").decode(bytes);
+      }
+
+      exported = exported.replace(/^\uFEFF/, "").trim();
+      const parsed = window.__carsonParseTrack(exported);
+      if (!parsed || !parsed.trackMetadata || !parsed.trackData) {
+        throw new Error("PolyTrack did not recognize this export format");
+      }
+
+      const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
+      try { parsed.trackMetadata.name = name; } catch (_) {}
+      const stableId = "carson-" + file.name.replace(/\.track$/i, "").toLowerCase();
+      try {
+        Object.defineProperty(parsed.trackData, "getId", { configurable: true, value: () => stableId });
+      } catch (_) {
+        try { parsed.trackData.getId = () => stableId; } catch (_) {}
+      }
+      if (typeof parsed.trackData.getId !== "function" ||
+          typeof parsed.trackData.createThumbnail !== "function") {
+        throw new Error("Export is missing required track methods");
+      }
+      return { file, parsed };
+    }
+
+    // Start fetching and parsing in the background as soon as the game UI is ready.
+    function preloadTracks() {
+      if (preloadPromise) return preloadPromise;
+      preloadPromise = (async () => {
         const response = await fetchWithRetry(API);
         const files = (await response.json())
           .filter(f => f.type === "file" && f.name.toLowerCase().endsWith(".track") && f.name.toLowerCase() !== "a.track" && f.size > 0)
           .sort((a, b) => a.name.localeCompare(b.name));
-        if (requestId !== loadRequest) return;
-        list.replaceChildren();
-        if (!files.length) {
-          list.innerHTML = '<div class="carson-track-empty">No Carson tracks yet.</div>';
-          return;
-        }
         if (typeof window.__carsonParseTrack !== "function" || typeof window.__carsonTrackRender !== "function") {
-          list.innerHTML = '<div class="carson-track-empty">PolyTrack is still initializing. Reopen Carson Tracks to retry.</div>';
+          throw new Error("PolyTrack is still initializing");
+        }
+        const results = await Promise.all(files.map(async file => {
+          try { return { ok: true, value: await downloadTrack(file) }; }
+          catch (error) {
+            console.error("Could not preload Carson track:", file.name, error);
+            return { ok: false, error: file.name + ": " + (error?.message || "unknown error") };
+          }
+        }));
+        return {
+          tracks: results.filter(result => result.ok).map(result => result.value),
+          failures: results.filter(result => !result.ok).map(result => result.error),
+          fileCount: files.length
+        };
+      })().catch(error => {
+        preloadPromise = null; // Allow a later tap to retry if startup networking failed.
+        throw error;
+      });
+      return preloadPromise;
+    }
+
+    async function loadTracks() {
+      if (rendered) return; // Keep existing cards; switching tabs must never duplicate them.
+      list.innerHTML = '<div class="carson-track-empty">Loading Carson tracks…</div>';
+      try {
+        const result = await preloadTracks();
+        list.replaceChildren();
+        if (!result.fileCount) {
+          list.innerHTML = '<div class="carson-track-empty">No Carson tracks yet.</div>';
+          rendered = true;
           return;
         }
-        const failures = [];
-        for (const file of files) {
-          try {
-            let exported;
-            try {
-              const fileResponse = await fetchWithRetry(file.download_url, {}, 2);
-              exported = await fileResponse.text();
-            } catch (directError) {
-              // Safari/content filters can fail on raw.githubusercontent.com even when api.github.com works.
-              const apiResponse = await fetchWithRetry(API + "/" + encodeURIComponent(file.name), {
-                headers: { Accept: "application/vnd.github+json" }
-              });
-              const apiFile = await apiResponse.json();
-              if (!apiFile.content || apiFile.encoding !== "base64") {
-                throw new Error("GitHub API returned no base64 file content");
-              }
-              const binary = atob(apiFile.content.replace(/\s/g, ""));
-              const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-              exported = new TextDecoder("utf-8").decode(bytes);
-            }
-            exported = exported.replace(/^\uFEFF/, "").trim();
-            const parsed = window.__carsonParseTrack(exported);
-            if (!parsed || !parsed.trackMetadata || !parsed.trackData) {
-              throw new Error("PolyTrack did not recognize this export format");
-            }
-            const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
-            try { parsed.trackMetadata.name = name; } catch (_) {}
-            const stableId = "carson-" + file.name.replace(/\.track$/i, "").toLowerCase();
-            try {
-              Object.defineProperty(parsed.trackData, "getId", { configurable: true, value: () => stableId });
-            } catch (_) {
-              try { parsed.trackData.getId = () => stableId; } catch (_) {}
-            }
-            if (typeof parsed.trackData.getId !== "function" ||
-                typeof parsed.trackData.createThumbnail !== "function") {
-              throw new Error("Export is missing required track methods");
-            }
-            const before = list.children.length;
-            window.__carsonTrackRender(parsed.trackMetadata, parsed.trackData.environment ?? 0, parsed.trackData, list);
-            if (list.children.length === before) throw new Error("PolyTrack did not create a track card");
-          } catch (error) {
-            console.error("Could not load Carson track:", file.name, error);
-            failures.push(file.name + ": " + (error?.message || "unknown error"));
+
+        for (const item of result.tracks) {
+          const { parsed } = item;
+          const before = list.children.length;
+          window.__carsonTrackRender(parsed.trackMetadata, parsed.trackData.environment ?? 0, parsed.trackData, list);
+          if (list.children.length === before) {
+            result.failures.push(item.file.name + ": PolyTrack did not create a track card");
           }
         }
-        if (requestId !== loadRequest) return;
+
         if (!list.children.length) {
-          const details = failures.length ? failures.slice(0, 3).join(" • ") : "No track cards were created.";
+          const details = result.failures.length ? result.failures.slice(0, 3).join(" • ") : "No track cards were created.";
           list.innerHTML = '<div class="carson-track-empty">Could not load any Carson tracks. ' +
             details.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
             '</div>';
-        } else if (failures.length) {
+        } else if (result.failures.length) {
           const note = document.createElement("div");
           note.className = "carson-track-empty";
-          note.textContent = failures.length + " track file(s) could not be loaded.";
+          note.textContent = result.failures.length + " track file(s) could not be loaded.";
           list.appendChild(note);
         }
+        rendered = true;
       } catch (error) {
-        if (requestId !== loadRequest) return;
         console.error("Could not load Carson tracks:", error);
         list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks after retries. Tap Carson Tracks to try again.</div>';
       }
     }
+
+    // Begin the network work during startup, not when Carson Tracks is opened.
+    preloadTracks().catch(error => console.warn("Carson track preload will retry when opened:", error));
   }
 
   const observer = new MutationObserver(install);
