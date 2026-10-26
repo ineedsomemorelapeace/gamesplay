@@ -106,9 +106,27 @@
         const failures = [];
         for (const file of files) {
           try {
-            const fileResponse = await fetch(file.download_url, { cache: "no-store" });
-            if (!fileResponse.ok) throw new Error("Download failed (" + fileResponse.status + ")");
-            const exported = (await fileResponse.text()).replace(/^\uFEFF/, "").trim();
+            let exported;
+            try {
+              const fileResponse = await fetch(file.download_url, { cache: "no-store" });
+              if (!fileResponse.ok) throw new Error("Direct download failed (" + fileResponse.status + ")");
+              exported = await fileResponse.text();
+            } catch (directError) {
+              // Safari/content filters can fail on raw.githubusercontent.com even when api.github.com works.
+              const apiResponse = await fetch(API + "/" + encodeURIComponent(file.name), {
+                cache: "no-store",
+                headers: { Accept: "application/vnd.github+json" }
+              });
+              if (!apiResponse.ok) throw new Error("Direct download and GitHub API fallback failed (" + apiResponse.status + ")");
+              const apiFile = await apiResponse.json();
+              if (!apiFile.content || apiFile.encoding !== "base64") {
+                throw new Error("GitHub API returned no base64 file content");
+              }
+              const binary = atob(apiFile.content.replace(/\s/g, ""));
+              const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+              exported = new TextDecoder("utf-8").decode(bytes);
+            }
+            exported = exported.replace(/^\uFEFF/, "").trim();
             const parsed = window.__carsonParseTrack(exported);
             if (!parsed || !parsed.trackMetadata || !parsed.trackData) {
               throw new Error("PolyTrack did not recognize this export format");
