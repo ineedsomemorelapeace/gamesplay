@@ -250,7 +250,7 @@
           note.textContent = result.failures.length + " track file(s) could not be loaded.";
           list.appendChild(note);
         }
-        rendered = true;
+        rendered = result.failures.length === 0;
       } catch (error) {
         console.error("Could not load Carson tracks:", error);
         list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks after retries. Tap Carson Tracks to try again.</div>';
