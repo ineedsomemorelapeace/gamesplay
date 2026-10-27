@@ -90,18 +90,18 @@
     let rendered = false;
     let preloadPromise = null;
 
-    async function fetchWithRetry(url, options = {}, attempts = 2) {
+    async function fetchWithRetry(url, options = {}, attempts = 4) {
       let lastError;
       for (let attempt = 0; attempt < attempts; attempt++) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4500);
+        const timeout = setTimeout(() => controller.abort(), 20000);
         try {
           const response = await fetch(url, { ...options, signal: controller.signal, cache: "no-store" });
           if (!response.ok) throw new Error("HTTP " + response.status);
           return response;
         } catch (error) {
           lastError = error;
-          if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+          if (attempt + 1 < attempts) await new Promise(resolve => setTimeout(resolve, Math.min(1500 * (attempt + 1), 5000)));
         } finally {
           clearTimeout(timeout);
         }
@@ -112,7 +112,7 @@
     async function downloadTrack(file) {
       let exported;
       try {
-        const response = await fetchWithRetry(file.download_url, {}, 1);
+        const response = await fetchWithRetry(file.download_url, {}, 3);
         exported = await response.text();
       } catch (directError) {
         // Safari/content filters can fail on raw.githubusercontent.com even when api.github.com works.
@@ -157,7 +157,7 @@
     function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        const response = await fetchWithRetry(API + "?ref=main", {}, 2);
+        const response = await fetchWithRetry(API + "?ref=main", {}, 5);
         const files = (await response.json())
           .filter(f => f.type === "file" && f.name.toLowerCase().endsWith(".track") && f.name.toLowerCase() !== "a.track" && f.size > 0)
           .sort((a, b) => a.name.localeCompare(b.name));
@@ -171,18 +171,41 @@
         if (typeof window.__carsonParseTrack !== "function" || typeof window.__carsonTrackRender !== "function") {
           throw new Error("PolyTrack track hooks did not initialize");
         }
-        const results = await Promise.all(files.map(async file => {
-          try { return { ok: true, value: await downloadTrack(file) }; }
-          catch (error) {
-            console.error("Could not preload Carson track:", file.name, error);
-            return { ok: false, error: file.name + ": " + (error?.message || "unknown error") };
+        // Limit concurrency for Safari/iPad and slower connections. Retry each file
+        // independently so one slow download cannot cause the whole list to be abandoned.
+        const results = new Array(files.length);
+        let nextIndex = 0;
+        async function worker() {
+          while (nextIndex < files.length) {
+            const index = nextIndex++;
+            const file = files[index];
+            let lastError;
+            for (let attempt = 0; attempt < 4; attempt++) {
+              try {
+                results[index] = { ok: true, value: await downloadTrack(file) };
+                lastError = null;
+                break;
+              } catch (error) {
+                lastError = error;
+                console.warn("Carson track attempt " + (attempt + 1) + " failed:", file.name, error);
+                if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+              }
+            }
+            if (lastError) {
+              console.error("Could not preload Carson track:", file.name, lastError);
+              results[index] = { ok: false, error: file.name + ": " + (lastError?.message || "unknown error") };
+            }
           }
-        }));
-        return {
-          tracks: results.filter(result => result.ok).map(result => result.value),
-          failures: results.filter(result => !result.ok).map(result => result.error),
+        }
+        await Promise.all(Array.from({ length: Math.min(2, files.length) }, () => worker()));
+        const output = {
+          tracks: results.filter(result => result?.ok).map(result => result.value),
+          failures: results.filter(result => result && !result.ok).map(result => result.error),
           fileCount: files.length
         };
+        // Keep successful preload results cached; allow a tap to retry if any file failed.
+        if (output.failures.length) preloadPromise = null;
+        return output;
       })().catch(error => {
         preloadPromise = null; // Allow a later tap to retry if startup networking failed.
         throw error;
@@ -191,7 +214,7 @@
     }
 
     async function loadTracks() {
-      if (rendered) return; // Keep existing cards; switching tabs must never duplicate them.
+      if (rendered) return; // Successful list stays cached; switching tabs never re-downloads or duplicates cards.
       list.innerHTML = '<div class="carson-track-empty">Loading Carson tracks…</div>';
       try {
         const result = await preloadTracks();
