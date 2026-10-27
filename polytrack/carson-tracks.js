@@ -105,32 +105,6 @@
     let rendered = false;
     let preloadPromise = null;
 
-    async function openNativeImporter(code) {
-      // Use PolyTrack's own importer/parser so cards remain compatible with the game's
-      // current track classes instead of constructing incomplete track objects ourselves.
-      const visible = element => !!(element && element.getClientRects().length && getComputedStyle(element).visibility !== "hidden");
-      const buttons = [...document.querySelectorAll("button,[role=button],.button")].filter(visible);
-      let importButton = buttons.find(el => /import(?:\s+track)?/i.test((el.innerText || el.textContent || "").trim()));
-      if (!importButton) throw new Error("PolyTrack Import button not found");
-      importButton.click();
-      await new Promise(resolve => setTimeout(resolve, 350));
-      const fields = [...document.querySelectorAll("textarea,input,[contenteditable=true]")].filter(visible);
-      const field = fields.find(el => /track|code|paste|import/i.test((el.placeholder || "") + " " + (el.getAttribute("aria-label") || ""))) || fields.find(el => el.tagName === "TEXTAREA") || fields[fields.length - 1];
-      if (!field) throw new Error("PolyTrack import field not found");
-      if (field.isContentEditable) field.textContent = code;
-      else {
-        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")?.set;
-        if (setter) setter.call(field, code); else field.value = code;
-      }
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-      field.dispatchEvent(new Event("change", { bubbles: true }));
-      await new Promise(resolve => setTimeout(resolve, 150));
-      const dialog = field.closest('[role=dialog],.modal,.popup') || document;
-      const actions = [...dialog.querySelectorAll("button,[role=button],.button")].filter(visible);
-      const submit = actions.find(el => el !== importButton && /^(import|load|open|confirm)(\s+track)?$/i.test((el.innerText || el.textContent || "").trim()));
-      if (!submit) throw new Error("Import field filled; confirmation button not found");
-      submit.click();
-    }
 
     async function fetchWithRetry(url, options = {}, attempts = 4) {
       let lastError;
@@ -228,7 +202,7 @@
     }
 
     async function loadTracks() {
-      if (rendered) return; // Successful list stays cached; switching tabs never re-downloads or duplicates cards.
+      if (rendered) return;
       list.innerHTML = '<div class="carson-track-empty">Loading Carson tracks…</div>';
       try {
         const result = await preloadTracks();
@@ -239,82 +213,75 @@
           return;
         }
 
-        // Use the same compact title / overhead-preview / record layout as native track cards.
-        // Keep records scoped to Carson Tracks so these tracks never get added to Custom Tracks.
-        const recordKey = item => "carson-track-record:" + item.file.name;
-        for (const item of result.tracks) {
-          const name = item.file.name.slice(0, -6).replace(/_/g, " ");
-          const card = document.createElement("article");
-          card.className = "track carson-native-card";
-          const title = document.createElement("div");
-          title.className = "carson-native-title";
-          title.textContent = name;
-          const preview = document.createElement("button");
-          preview.type = "button";
-          preview.className = "carson-native-preview";
-          preview.setAttribute("aria-label", "Play " + name);
-          const graphic = document.createElement("div");
-          graphic.className = "carson-native-overhead";
-          // Derive a stable overhead-style path from the track export, not a random icon.
-          // The official TrackData thumbnail API is private in this build, so this is a deterministic
-          // fallback preview rather than pretending the native renderer was available.
-          let seed = 2166136261;
-          for (let i = 0; i < item.code.length; i++) seed = Math.imul(seed ^ item.code.charCodeAt(i), 16777619) >>> 0;
-          const points = [];
-          for (let i = 0; i < 28; i++) {
-            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-            const px = 12 + (seed % 76);
-            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-            const py = 12 + (seed % 76);
-            points.push(px + "," + py);
+        // Wait for PolyTrack's own parser and card renderer, exposed by main.bundle.js.
+        // These are the same TrackData objects, thumbnails, selection callbacks, and record
+        // handling used by Official/Community tracks; never fake a track object or use Import.
+        const waitForNative = async () => {
+          for (let attempt = 0; attempt < 120; attempt++) {
+            if (typeof window.__carsonTrackParser?.fromExportString === "function" &&
+                typeof window.__carsonTrackRender === "function") return;
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
-          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-          svg.setAttribute("viewBox", "0 0 100 100");
-          svg.setAttribute("role", "img");
-          svg.setAttribute("aria-label", name + " track preview");
-          const path = document.createElementNS(svg.namespaceURI, "polyline");
-          path.setAttribute("points", points.join(" "));
-          path.setAttribute("fill", "none");
-          path.setAttribute("stroke", "#fff");
-          path.setAttribute("stroke-width", "3.5");
-          path.setAttribute("stroke-linecap", "square");
-          path.setAttribute("stroke-linejoin", "miter");
-          svg.appendChild(path);
-          graphic.appendChild(svg);
-          preview.appendChild(graphic);
-          const record = document.createElement("div");
-          record.className = "carson-native-record";
-          record.textContent = localStorage.getItem(recordKey(item)) || "No record";
-          preview.addEventListener("click", async () => {
-            preview.disabled = true;
-            record.textContent = "Loading…";
-            try {
-              await openNativeImporter(item.code);
-              record.textContent = "Ready to play";
-            } catch (error) {
-              console.error("Could not open Carson track:", item.file.name, error);
-              record.textContent = "Tap to retry";
-            } finally { preview.disabled = false; }
-          });
-          card.append(title, preview, record);
-          list.appendChild(card);
+          throw new Error("Native PolyTrack track parser/renderer did not become available");
+        };
+        await waitForNative();
+
+        let added = 0;
+        const failures = [...result.failures];
+        for (const item of result.tracks) {
+          try {
+            const parsed = window.__carsonTrackParser.fromExportString(item.code);
+            if (!parsed?.trackMetadata || !parsed?.trackData ||
+                typeof parsed.trackData.getId !== "function" ||
+                typeof parsed.trackData.createThumbnail !== "function") {
+              throw new Error("PolyTrack rejected this track export");
+            }
+
+            // Preserve the native metadata/data instances. Only replace the displayed name
+            // with the filename, so filenames control labels and duplicate embedded names
+            // cannot overwrite each other's native records.
+            const metadata = {
+              ...parsed.trackMetadata,
+              name: item.file.name.slice(0, -6).replace(/_/g, " ")
+            };
+            const before = list.childElementCount;
+            window.__carsonTrackRender(
+              metadata,
+              parsed.trackData.environment,
+              parsed.trackData,
+              list
+            );
+            if (list.childElementCount <= before) throw new Error("Native track card was not created");
+            added++;
+          } catch (error) {
+            console.error("Could not parse/render Carson track:", item.file.name, error);
+            failures.push(item.file.name + ": " + (error?.message || "native rendering failed"));
+          }
         }
 
-        if (!list.children.length) {
-          const details = result.failures.length ? result.failures.slice(0, 3).join(" • ") : "No track cards were created.";
-          list.innerHTML = '<div class="carson-track-empty">Could not load any Carson tracks. ' +
-            details.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
-            '</div>';
-        } else if (result.failures.length) {
+        if (!added) {
+          const details = failures.slice(0, 3).join(" • ") || "No valid track exports were found.";
+          const message = document.createElement("div");
+          message.className = "carson-track-empty";
+          message.textContent = "Could not load Carson tracks. " + details + " Tap Carson Tracks to retry.";
+          list.replaceChildren(message);
+          rendered = false;
+          return;
+        }
+
+        if (failures.length) {
           const note = document.createElement("div");
           note.className = "carson-track-empty";
-          note.textContent = result.failures.length + " track file(s) could not be loaded.";
+          note.textContent = failures.length + " track file(s) could not be loaded.";
           list.appendChild(note);
         }
-        rendered = result.tracks.length > 0;
+        rendered = true;
       } catch (error) {
         console.error("Could not load Carson tracks:", error);
-        list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks: ' + String(error?.message || error || "unknown error").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '. Tap Carson Tracks to retry.</div>';
+        list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks: ' +
+          String(error?.message || error || "unknown error").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") +
+          '. Tap Carson Tracks to retry.</div>';
+        rendered = false;
       }
     }
 
