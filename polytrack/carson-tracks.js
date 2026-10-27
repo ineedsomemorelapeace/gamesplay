@@ -163,29 +163,52 @@
     async function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        const manifestResponse = await fetchWithRetry(MANIFEST, {}, 3);
-        const manifest = await manifestResponse.json();
-        const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
-        if (!Array.isArray(entries)) throw new Error("Carson manifest has no tracks array");
+        // GitHub Pages cannot enumerate directories. Query the repository's live folder
+        // first so adding a .track file requires no manifest or JavaScript edits.
+        let files = [];
+        try {
+          const response = await fetchWithRetry(DIRECTORY_API + "?ref=main", {}, 3);
+          const listing = await response.json();
+          if (!Array.isArray(listing)) throw new Error("GitHub folder listing was not an array");
+          files = listing
+            .filter(entry => entry && entry.type === "file" &&
+              typeof entry.name === "string" &&
+              entry.name.toLowerCase().endsWith(".track") &&
+              entry.name.toLowerCase() !== "a.track")
+            .map(entry => ({
+              name: entry.name,
+              url: new URL("tracks/carson/" + entry.name.split("/").map(encodeURIComponent).join("/"), SITE_BASE).href
+            }));
+        } catch (apiError) {
+          console.warn("Carson live directory lookup failed; trying manifest fallback:", apiError);
+        }
 
-        const files = entries
-          .map(entry => typeof entry === "string" ? { name: entry } : entry)
-          .filter(file => file && typeof file.name === "string" &&
-            file.name.toLowerCase().endsWith(".track") && file.name.toLowerCase() !== "a.track")
-          .map(file => ({
-            name: file.name,
-            // Encode each path segment only; keep the URL rooted at this deployed PolyTrack folder.
-            url: new URL("tracks/carson/" + encodeURIComponent(file.name), SITE_BASE).href
-          }))
-          .sort((a, b) => a.name.localeCompare(b.name));
+        // The checked-in manifest remains a fallback for networks that block api.github.com.
+        if (!files.length) {
+          const manifestResponse = await fetchWithRetry(MANIFEST, {}, 3);
+          const manifest = await manifestResponse.json();
+          const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
+          if (!Array.isArray(entries)) throw new Error("Carson manifest has no tracks array");
+          files = entries
+            .map(entry => typeof entry === "string" ? { name: entry } : entry)
+            .filter(file => file && typeof file.name === "string" &&
+              file.name.toLowerCase().endsWith(".track") && file.name.toLowerCase() !== "a.track")
+            .map(file => ({
+              name: file.name,
+              url: new URL("tracks/carson/" + file.name.split("/").map(encodeURIComponent).join("/"), SITE_BASE).href
+            }));
+        }
 
-        if (!files.length) return { tracks: [], failures: [], fileCount: 0 };
+        // De-duplicate and sort consistently; no hard-coded track list or version ordering.
+        const unique = new Map();
+        for (const file of files) unique.set(file.name, file);
+        files = [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
         const results = await Promise.all(files.map(async file => {
           try {
-            const response = await fetchWithRetry(file.url, {}, 3);
+            const response = await fetchWithRetry(file.url, {}, 4);
             const code = (await response.text()).replace(/^\\uFEFF/, "").trim();
             if (!code) throw new Error("empty response");
-            if (!/^(PolyTrack|v3)/.test(code)) throw new Error("response is not a PolyTrack export");
+            if (!/^PolyTrack/i.test(code)) throw new Error("file is not a PolyTrack export");
             return { ok: true, value: { file, code } };
           } catch (error) {
             console.error("Carson track fetch failed:", file.name, file.url, error);
