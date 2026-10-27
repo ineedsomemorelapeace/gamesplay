@@ -233,7 +233,7 @@
           card.className = "track carson-track-card";
           card.style.cssText = "display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%;min-height:100px;padding:16px;text-align:left;color:inherit;background:rgba(25,35,55,.9);border:1px solid rgba(180,198,232,.35);border-radius:8px;font:inherit;cursor:pointer;touch-action:manipulation";
           const title = document.createElement("strong");
-          title.textContent = item.file.name.replace(/\\.track$/i, "").replace(/_/g, " ");
+          title.textContent = item.file.name.slice(0, -6).replace(/_/g, " ");
           title.style.cssText = "font-size:18px;overflow-wrap:anywhere";
           const action = document.createElement("span");
           action.textContent = "Tap to load track";
