@@ -47,14 +47,12 @@
     const customContainer = containers[containers.length - 1];
     const tracksParent = customContainer.parentElement;
     const tabs = custom.parentElement;
-    const button = document.createElement("button");
+    const button = official?.cloneNode(true) || document.createElement("button");
     button.className = "button carson";
-    const official = document.querySelector(".button.official");
-    button.innerHTML = official ? official.innerHTML : "";
-    const tabLabel = button.querySelector("span, p, .title");
-    if (tabLabel) tabLabel.textContent = "Carson Tracks";
-    else button.appendChild(document.createTextNode("Carson Tracks"));
-    // Keep PolyTrack's own tab markup/icons instead of adding a custom cover/icon layer.
+    button.querySelector(".cover")?.remove();
+    const label = button.querySelector("span, p, .title");
+    if (label) label.textContent = "Carson Tracks";
+    else button.textContent = "Carson Tracks";
     tabs.insertBefore(button, custom);
 
     const container = document.createElement("div");
@@ -238,58 +236,33 @@
         }
 
         for (const item of result.tracks) {
-          // Match PolyTrack's native track-card DOM/classes and icon assets.
-          const card = document.createElement("div");
-          card.className = "track";
-          const nativeButton = document.createElement("button");
-          nativeButton.className = "button";
-          nativeButton.type = "button";
-          const titleWrap = document.createElement("div");
-          titleWrap.className = "track-title";
-          const title = document.createElement("p");
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "track carson-track-card";
+          card.style.cssText = "display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%;min-height:100px;padding:16px;text-align:left;color:inherit;background:rgba(25,35,55,.9);border:1px solid rgba(180,198,232,.35);border-radius:8px;font:inherit;cursor:pointer;touch-action:manipulation";
+          const title = document.createElement("strong");
           title.textContent = item.file.name.slice(0, -6).replace(/_/g, " ");
-          titleWrap.appendChild(title);
-          nativeButton.appendChild(titleWrap);
-
-          // The native card uses a track thumbnail canvas. Until PolyTrack parses the
-          // file into its internal TrackData class, use a neutral preview canvas and
-          // preserve the standard environment/record layout rather than custom icons.
-          const preview = document.createElement("canvas");
-          preview.width = 320;
-          preview.height = 180;
-          preview.setAttribute("aria-label", title.textContent + " track preview");
-          preview.style.width = "100%";
-          preview.style.height = "auto";
-          preview.style.aspectRatio = "16 / 9";
-          preview.style.background = "rgba(20,28,40,.65)";
-          nativeButton.appendChild(preview);
-          const environment = document.createElement("img");
-          environment.className = "environment";
-          environment.src = new URL("images/summer.svg", SITE_BASE).href;
-          environment.alt = "Summer";
-          nativeButton.appendChild(environment);
-          const record = document.createElement("div");
-          record.className = "record";
-          record.textContent = "No record";
-          nativeButton.appendChild(record);
-          card.appendChild(nativeButton);
-
-          nativeButton.addEventListener("click", async () => {
-            title.textContent = "Loading…";
-            nativeButton.disabled = true;
+          title.style.cssText = "font-size:18px;overflow-wrap:anywhere";
+          const action = document.createElement("span");
+          action.textContent = "Tap to load track";
+          action.style.cssText = "font-size:14px;opacity:.8";
+          card.append(title, action);
+          card.addEventListener("click", async () => {
+            action.textContent = "Opening track importer…";
+            card.disabled = true;
             try {
               await openNativeImporter(item.code);
-              title.textContent = item.file.name.slice(0, -6).replace(/_/g, " ");
+              action.textContent = "Track sent to PolyTrack";
             } catch (error) {
               console.error("Could not open native track importer:", error);
               try {
                 await navigator.clipboard.writeText(item.code);
-                title.textContent = "Copied — paste in Import";
+                action.textContent = "Track code copied — open PolyTrack Import and paste";
               } catch (_) {
-                title.textContent = "Open Import and paste track code";
+                action.textContent = "Open PolyTrack Import and paste the track code manually";
               }
             } finally {
-              nativeButton.disabled = false;
+              card.disabled = false;
             }
           });
           list.appendChild(card);
