@@ -1,19 +1,8 @@
 /* Carson Tracks extension for the PolyTrack selection screen. */
 (() => {
-  // Keep the small track manifest local: GitHub's directory API and raw.githubusercontent.com
-  // are unreliable/blocked on some iPad networks. Track files are served by the same
-  // GitHub Pages origin as the game, just like its other static assets.
-  const TRACK_FILES = [
-    "Dexton’s_Impossible_Track.track",
-    "JP's_Track.track",
-    "Jackson_Bronze.track",
-    "Twins_😭.track"
-  ].map(name => ({
-    name,
-    type: "file",
-    size: 1,
-    download_url: new URL("tracks/carson/" + encodeURIComponent(name), document.baseURI).href
-  }));
+  // GitHub's API is used only to discover filenames. Actual track contents are fetched
+  // from this GitHub Pages origin, avoiding raw.githubusercontent.com (blocked by Securely).
+  const API = "https://api.github.com/repos/ineedsomemorelapeace/gamesplay/contents/polytrack/tracks/carson";
   const FORM = "https://forms.gle/yFXbuVSDimBbD9fz5";
   if (!document.querySelector("#carson-tracks-style")) {
     const style = document.createElement("style");
@@ -153,7 +142,17 @@
     function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        const files = TRACK_FILES.slice().sort((a, b) => a.name.localeCompare(b.name));
+        const listingResponse = await fetchWithRetry(API + "?ref=main", {}, 5);
+        const files = (await listingResponse.json())
+          .filter(file => file.type === "file" && file.name.toLowerCase().endsWith(".track") &&
+            file.name.toLowerCase() !== "a.track" && file.size > 0)
+          .map(file => ({
+            name: file.name,
+            size: file.size,
+            // Use the same origin as the game for the actual file download.
+            download_url: new URL("tracks/carson/" + encodeURIComponent(file.name), document.baseURI).href
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
         const hookDeadline = Date.now() + 30000;
         while ((typeof window.__carsonParseTrack !== "function" ||
                 typeof window.__carsonTrackRender !== "function") && Date.now() < hookDeadline) {
