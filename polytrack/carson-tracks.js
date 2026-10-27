@@ -1,8 +1,12 @@
 /* Carson Tracks extension for the PolyTrack selection screen. */
 (() => {
-  // GitHub's API is used only to discover filenames. Actual track contents are fetched
-  // from this GitHub Pages origin, avoiding raw.githubusercontent.com (blocked by Securely).
-  const MANIFEST = new URL("tracks/carson/manifest.json", document.baseURI).href;
+  // Resolve assets from this script's own folder, not the page's possibly altered base URI.
+  const SCRIPT_URL = document.currentScript?.src ||
+    [...document.scripts].map(script => script.src).find(src => /carson-tracks\.js(?:\?|$)/.test(src)) ||
+    location.href;
+  const SITE_BASE = new URL("./", SCRIPT_URL);
+  const MANIFEST = new URL("tracks/carson/manifest.json", SITE_BASE).href;
+  const DIRECTORY_API = "https://api.github.com/repos/ineedsomemorelapeace/gamesplay/contents/polytrack/tracks/carson";
   const FORM = "https://forms.gle/yFXbuVSDimBbD9fz5";
   if (!document.querySelector("#carson-tracks-style")) {
     const style = document.createElement("style");
@@ -166,17 +170,32 @@
       preloadPromise = (async () => {
         // Manifest and track contents are served by this GitHub Pages site.
         // The browser never calls GitHub's API or raw.githubusercontent.com.
-        const manifestResponse = await fetchWithRetry(MANIFEST, {}, 5);
-        const manifest = await manifestResponse.json();
-        const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
-        if (!Array.isArray(entries)) throw new Error("Carson manifest must contain a tracks array");
+        // Prefer live directory discovery so adding a .track file needs no manifest edit.
+        // If the school filter blocks the GitHub API, fall back to the checked-in manifest.
+        let entries;
+        try {
+          const directoryResponse = await fetchWithRetry(DIRECTORY_API, {
+            headers: { Accept: "application/vnd.github+json" }
+          }, 2);
+          const directory = await directoryResponse.json();
+          if (!Array.isArray(directory)) throw new Error("GitHub directory response was not an array");
+          entries = directory
+            .filter(entry => entry.type === "file" && entry.name.toLowerCase().endsWith(".track"))
+            .map(entry => ({ name: entry.name }));
+        } catch (directoryError) {
+          console.warn("Carson directory discovery unavailable; using manifest:", directoryError);
+          const manifestResponse = await fetchWithRetry(MANIFEST, {}, 3);
+          const manifest = await manifestResponse.json();
+          entries = Array.isArray(manifest) ? manifest : manifest.tracks;
+        }
+        if (!Array.isArray(entries)) throw new Error("Carson track list is not an array");
         const files = entries
           .map(entry => typeof entry === "string" ? { name: entry } : entry)
           .filter(file => file && typeof file.name === "string" &&
             file.name.toLowerCase().endsWith(".track") && file.name.toLowerCase() !== "a.track")
           .map(file => ({
             name: file.name,
-            download_url: new URL("tracks/carson/" + encodeURIComponent(file.name), document.baseURI).href
+            download_url: new URL("tracks/carson/" + encodeURIComponent(file.name), SITE_BASE).href
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
