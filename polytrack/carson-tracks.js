@@ -208,32 +208,24 @@
           return;
         }
 
-        // Build cards directly so list rendering does not depend on private bundle globals.
+        // Use PolyTrack's own parser and card renderer: native thumbnails, layout, click-to-play, and records.
+        const waitForNative = async () => {
+          for (let attempt = 0; attempt < 120; attempt++) {
+            if (typeof window.__carsonTrackParser?.fromExportString === "function" && typeof window.__carsonTrackRender === "function") return;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          throw new Error("Native PolyTrack parser/card renderer unavailable");
+        };
+        await waitForNative();
         for (const item of result.tracks) {
-          const card = document.createElement("button");
-          card.type = "button";
-          card.className = "track carson-track-card";
-          card.style.cssText = "display:flex;flex-direction:column;align-items:stretch;text-align:left;width:100%;min-height:110px;padding:16px;border:0;background:rgba(20,28,45,.94);color:#f4f7ff;cursor:pointer;font:inherit;box-shadow:0 4px 14px rgba(0,0,0,.22)";
-          const title = document.createElement("span");
-          title.textContent = item.file.name.slice(0, -6).replace(/_/g, " ");
-          title.style.cssText = "font-size:18px;font-weight:700;overflow-wrap:anywhere";
-          const hint = document.createElement("span");
-          hint.textContent = "Play track";
-          hint.style.cssText = "margin-top:12px;font-size:13px;opacity:.75";
-          card.append(title, hint);
-          card.addEventListener("click", async () => {
-            card.disabled = true;
-            hint.textContent = "Opening track…";
-            try {
-              await openNativeImporter(item.code);
-              hint.textContent = "Track sent to PolyTrack";
-            } catch (error) {
-              console.error("Could not open Carson track:", item.file.name, error);
-              hint.textContent = "Could not open — try again";
-              card.disabled = false;
-            }
-          });
-          list.appendChild(card);
+          try {
+            const parsed = window.__carsonTrackParser.fromExportString(item.code);
+            if (!parsed?.trackMetadata || !parsed?.trackData) throw new Error("Invalid PolyTrack export format");
+            const metadata = { ...parsed.trackMetadata, name: item.file.name.slice(0, -6).replace(/_/g, " ") };
+            window.__carsonTrackRender(metadata, parsed.trackData.environment, parsed.trackData, list);
+          } catch (error) {
+            console.error("Could not create native Carson track card:", item.file.name, error);
+          }
         }
 
         if (!list.children.length) {
