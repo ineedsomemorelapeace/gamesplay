@@ -14,6 +14,7 @@
       .carson-tracks-container { display:none; width:100%; box-sizing:border-box; grid-column:1 / -1; }
       .carson-tracks-container.open { display:block; }
       .carson-tracks-container .carson-track-list { width:100%; box-sizing:border-box; }
+      .tracks-container.carson-extension-hidden { display:none!important; }
       .carson-tracks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 4px 12px; border-bottom:4px solid rgba(180,198,232,.48); margin:0 4px 22px; }
       .carson-tracks-heading { margin:0; color:#f4f7ff; text-shadow:0 2px 3px rgba(0,0,0,.45); font-size:clamp(22px,2.2vw,34px); font-weight:700; line-height:1.2; }
       .carson-tracks-submit { display:inline-flex; align-items:center; justify-content:center; gap:9px; flex:0 0 auto; border:0; border-radius:0; min-height:42px; padding:7px 15px; color:#f7f8ff; background:#17254f; box-shadow:inset 0 0 0 1px rgba(190,210,255,.12); font:inherit; font-size:clamp(16px,1.6vw,24px); font-weight:700; text-shadow:0 1px 2px rgba(0,0,0,.5); cursor:pointer; clip-path:polygon(8% 0,100% 0,92% 100%,0 100%); }
@@ -83,17 +84,24 @@
     list.className = "carson-track-list";
     container.append(toolbar, list);
 
+    function showCarsonOnly() {
+      document.querySelectorAll(".tracks-container:not(.carson-tracks-container)").forEach(c => c.classList.add("carson-extension-hidden"));
+      container.classList.add("open");
+    }
+    function restoreNativeLists() {
+      document.querySelectorAll(".tracks-container.carson-extension-hidden").forEach(c => c.classList.remove("carson-extension-hidden"));
+      container.classList.remove("open");
+    }
     button.addEventListener("click", () => {
       document.querySelectorAll(".button.official,.button.community,.button.custom,.button.carson").forEach(b => b.classList.toggle("selected", b === button));
-      document.querySelectorAll(".tracks-container").forEach(c => c.classList.toggle("open", c === container));
+      showCarsonOnly();
       loadTracks();
     });
-    // Delegate tab changes so returning from gameplay/recreated menus cannot leave stale handlers.
+    // Restore the game-owned list visibility whenever a native tab is selected.
     tabs.addEventListener("click", event => {
       const tab = event.target.closest(".button.official,.button.community,.button.custom,.button.carson");
-      if (!tab) return;
-      if (tab !== button) container.classList.remove("open");
-    });
+      if (tab && tab !== button) restoreNativeLists();
+    }, true);
     installed = true;
 
     let rendered = false;
