@@ -53,9 +53,15 @@
       // making leaderboard requests; otherwise the first requests can escape interception.
       (async () => {
         try {
-          await import("./supabase-backend.js?v=20261027-15");
+          await import("./supabase-backend.js?v=20261027-16");
         } catch (error) {
           console.error("PolyTrack Supabase bridge failed to load:", error);
+        }
+        // Independent records viewer: reads Supabase directly without relying on the legacy leaderboard API bridge.
+        try {
+          await import("./supabase-records.js?v=20261027-1");
+        } catch (error) {
+          console.error("PolyTrack direct records viewer failed to load:", error);
         }
         const loadScript = src => new Promise(resolve => {
           const script = document.createElement("script");
