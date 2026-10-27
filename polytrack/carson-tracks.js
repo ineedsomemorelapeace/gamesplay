@@ -39,6 +39,7 @@
     if (oldButton) oldButton.remove();
     if (oldContainer) oldContainer.remove();
 
+    const official = document.querySelector(".button.official");
     const community = document.querySelector(".button.community");
     const custom = document.querySelector(".button.custom");
     const containers = [...document.querySelectorAll(".tracks-container:not(.carson-tracks-container)")];
