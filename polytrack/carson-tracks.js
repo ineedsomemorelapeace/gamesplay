@@ -2,7 +2,7 @@
 (() => {
   // GitHub's API is used only to discover filenames. Actual track contents are fetched
   // from this GitHub Pages origin, avoiding raw.githubusercontent.com (blocked by Securely).
-  const API = "https://api.github.com/repos/ineedsomemorelapeace/gamesplay/contents/polytrack/tracks/carson";
+  const MANIFEST = new URL("tracks/carson/manifest.json", document.baseURI).href;
   const FORM = "https://forms.gle/yFXbuVSDimBbD9fz5";
   if (!document.querySelector("#carson-tracks-style")) {
     const style = document.createElement("style");
@@ -164,14 +164,18 @@
     function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        const listingResponse = await fetchWithRetry(API + "?ref=main", {}, 5);
-        const files = (await listingResponse.json())
-          .filter(file => file.type === "file" && file.name.toLowerCase().endsWith(".track") &&
-            file.name.toLowerCase() !== "a.track" && file.size > 0)
+        // Manifest and track contents are served by this GitHub Pages site.
+        // The browser never calls GitHub's API or raw.githubusercontent.com.
+        const manifestResponse = await fetchWithRetry(MANIFEST, {}, 5);
+        const manifest = await manifestResponse.json();
+        const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
+        if (!Array.isArray(entries)) throw new Error("Carson manifest must contain a tracks array");
+        const files = entries
+          .map(entry => typeof entry === "string" ? { name: entry } : entry)
+          .filter(file => file && typeof file.name === "string" &&
+            file.name.toLowerCase().endsWith(".track") && file.name.toLowerCase() !== "a.track")
           .map(file => ({
             name: file.name,
-            size: file.size,
-            // Use the same origin as the game for the actual file download.
             download_url: new URL("tracks/carson/" + encodeURIComponent(file.name), document.baseURI).href
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
