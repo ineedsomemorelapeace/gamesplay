@@ -208,24 +208,59 @@
           return;
         }
 
-        // Use PolyTrack's own parser and card renderer: native thumbnails, layout, click-to-play, and records.
-        const waitForNative = async () => {
-          for (let attempt = 0; attempt < 120; attempt++) {
-            if (typeof window.__carsonTrackParser?.fromExportString === "function" && typeof window.__carsonTrackRender === "function") return;
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-          throw new Error("Native PolyTrack parser/card renderer unavailable");
-        };
-        await waitForNative();
+        // Native parser globals are private to the bundled game and are not exposed.
+        // Build track cards here instead of blocking the whole list waiting for them.
         for (const item of result.tracks) {
-          try {
-            const parsed = window.__carsonTrackParser.fromExportString(item.code);
-            if (!parsed?.trackMetadata || !parsed?.trackData) throw new Error("Invalid PolyTrack export format");
-            const metadata = { ...parsed.trackMetadata, name: item.file.name.slice(0, -6).replace(/_/g, " ") };
-            window.__carsonTrackRender(metadata, parsed.trackData.environment, parsed.trackData, list);
-          } catch (error) {
-            console.error("Could not create native Carson track card:", item.file.name, error);
+          const name = item.file.name.slice(0, -6).replace(/_/g, " ");
+          const card = document.createElement("article");
+          card.className = "track carson-native-card";
+          card.style.cssText = "overflow:hidden;background:#14244f;color:white;display:flex;flex-direction:column;min-width:0";
+          const title = document.createElement("div");
+          title.textContent = name;
+          title.style.cssText = "background:#222e5c;padding:8px 5px;text-align:center;font-size:clamp(14px,1.6vw,22px);font-weight:700;min-height:36px;display:flex;align-items:center;justify-content:center;overflow-wrap:anywhere";
+          const play = document.createElement("button");
+          play.type = "button";
+          play.setAttribute("aria-label", "Play " + name);
+          play.style.cssText = "border:0;background:#14244f;min-height:190px;width:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:12px";
+          let seed = 0;
+          for (let i = 0; i < item.code.length; i += Math.max(1, Math.floor(item.code.length / 120))) seed = (Math.imul(seed, 31) + item.code.charCodeAt(i)) >>> 0;
+          const points = [];
+          let x = 20, y = 25;
+          for (let i = 0; i < 18; i++) {
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            x = Math.max(10, Math.min(90, x + ((seed >>> 16) % 31) - 15));
+            seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+            y = Math.max(10, Math.min(90, y + ((seed >>> 16) % 31) - 15));
+            points.push(x + "," + y);
           }
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("viewBox", "0 0 100 100");
+          svg.setAttribute("width", "100%");
+          svg.setAttribute("height", "170");
+          const line = document.createElementNS(svg.namespaceURI, "polyline");
+          line.setAttribute("points", points.join(" "));
+          line.setAttribute("fill", "none");
+          line.setAttribute("stroke", "#fff");
+          line.setAttribute("stroke-width", "5");
+          line.setAttribute("stroke-linejoin", "round");
+          svg.appendChild(line);
+          play.appendChild(svg);
+          const record = document.createElement("div");
+          record.style.cssText = "background:#222e5c;text-align:center;padding:7px 4px;font-size:clamp(13px,1.4vw,19px);font-weight:700;min-height:22px";
+          record.textContent = "No record";
+          play.addEventListener("click", async () => {
+            play.disabled = true;
+            record.textContent = "Loading…";
+            try {
+              await openNativeImporter(item.code);
+              record.textContent = "Ready to play";
+            } catch (error) {
+              console.error("Could not open Carson track:", item.file.name, error);
+              record.textContent = "Tap to retry";
+            } finally { play.disabled = false; }
+          });
+          card.append(title, play, record);
+          list.appendChild(card);
         }
 
         if (!list.children.length) {
@@ -239,7 +274,7 @@
           note.textContent = result.failures.length + " track file(s) could not be loaded.";
           list.appendChild(note);
         }
-        rendered = result.failures.length === 0;
+        rendered = result.tracks.length > 0;
       } catch (error) {
         console.error("Could not load Carson tracks:", error);
         list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks: ' + String(error?.message || error || "unknown error").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") + '. Tap Carson Tracks to retry.</div>';
