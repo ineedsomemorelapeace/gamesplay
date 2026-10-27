@@ -14970,6 +14970,7 @@
           (K = new WeakMap()),
           (v = new WeakSet()),
           (q = function (e, t, n, r, a, s, o, l = null) {
+            window.__carsonTrackParser = Y.A;
             window.__carsonTrackRender = (metadata, environment, trackData, target) => {
               const id = trackData.getId(), thumbnail = trackData.createThumbnail();
               q.call(this, "community", null, metadata, environment, () => Promise.resolve(trackData), id, thumbnail);
