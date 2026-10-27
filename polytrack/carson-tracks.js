@@ -107,6 +107,33 @@
     let rendered = false;
     let preloadPromise = null;
 
+    async function openNativeImporter(code) {
+      // Use PolyTrack's own importer/parser so cards remain compatible with the game's
+      // current track classes instead of constructing incomplete track objects ourselves.
+      const visible = element => !!(element && element.getClientRects().length && getComputedStyle(element).visibility !== "hidden");
+      const buttons = [...document.querySelectorAll("button,[role=button],.button")].filter(visible);
+      let importButton = buttons.find(el => /import(?:\s+track)?/i.test((el.innerText || el.textContent || "").trim()));
+      if (!importButton) throw new Error("PolyTrack Import button not found");
+      importButton.click();
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const fields = [...document.querySelectorAll("textarea,input,[contenteditable=true]")].filter(visible);
+      const field = fields.find(el => /track|code|paste|import/i.test((el.placeholder || "") + " " + (el.getAttribute("aria-label") || ""))) || fields.find(el => el.tagName === "TEXTAREA") || fields[fields.length - 1];
+      if (!field) throw new Error("PolyTrack import field not found");
+      if (field.isContentEditable) field.textContent = code;
+      else {
+        const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")?.set;
+        if (setter) setter.call(field, code); else field.value = code;
+      }
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const dialog = field.closest('[role=dialog],.modal,.popup') || document;
+      const actions = [...dialog.querySelectorAll("button,[role=button],.button")].filter(visible);
+      const submit = actions.find(el => el !== importButton && /^(import|load|open|confirm)(\s+track)?$/i.test((el.innerText || el.textContent || "").trim()));
+      if (!submit) throw new Error("Import field filled; confirmation button not found");
+      submit.click();
+    }
+
     async function fetchWithRetry(url, options = {}, attempts = 4) {
       let lastError;
       for (let attempt = 0; attempt < attempts; attempt++) {
@@ -128,29 +155,9 @@
 
     async function downloadTrack(file) {
       const response = await fetchWithRetry(file.download_url, {}, 5);
-      const exported = (await response.text()).replace(/^\uFEFF/, "").trim();
-      if (!exported) throw new Error("Track file is empty");
-
-      const parsed = window.__carsonParseTrack(exported);
-      if (!parsed || !parsed.trackMetadata || !parsed.trackData) {
-        throw new Error("PolyTrack did not recognize this export format");
-      }
-
-      const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
-      try { parsed.trackMetadata.name = name; } catch (_) {}
-      const stableName = file.name.replace(/\.track$/i, "").normalize("NFKD").toLowerCase()
-        .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-      const stableId = "carson-" + (stableName || "unnamed-track");
-      try {
-        Object.defineProperty(parsed.trackData, "getId", { configurable: true, value: () => stableId });
-      } catch (_) {
-        try { parsed.trackData.getId = () => stableId; } catch (_) {}
-      }
-      if (typeof parsed.trackData.getId !== "function" ||
-          typeof parsed.trackData.createThumbnail !== "function") {
-        throw new Error("Export is missing required track methods");
-      }
-      return { file, parsed };
+      const code = (await response.text()).replace(/^\\uFEFF/, "").trim();
+      if (!code) throw new Error("Track file is empty");
+      return { file, code };
     }
 
     // Same-origin static file URLs: no GitHub API calls and no cross-origin raw-file requests.
@@ -168,14 +175,6 @@
             download_url: new URL("tracks/carson/" + encodeURIComponent(file.name), document.baseURI).href
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
-        const hookDeadline = Date.now() + 30000;
-        while ((typeof window.__carsonParseTrack !== "function" ||
-                typeof window.__carsonTrackRender !== "function") && Date.now() < hookDeadline) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        if (typeof window.__carsonParseTrack !== "function" || typeof window.__carsonTrackRender !== "function") {
-          throw new Error("PolyTrack track hooks did not initialize");
-        }
 
         const results = new Array(files.length);
         let nextIndex = 0;
@@ -229,17 +228,36 @@
         }
 
         for (const item of result.tracks) {
-          const { parsed } = item;
-          const before = list.children.length;
-          try {
-            window.__carsonTrackRender(parsed.trackMetadata, parsed.trackData.environment ?? 0, parsed.trackData, list);
-            if (list.children.length === before) {
-              result.failures.push(item.file.name + ": PolyTrack did not create a track card");
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "track carson-track-card";
+          card.style.cssText = "display:flex;flex-direction:column;align-items:stretch;gap:10px;width:100%;min-height:100px;padding:16px;text-align:left;color:inherit;background:rgba(25,35,55,.9);border:1px solid rgba(180,198,232,.35);border-radius:8px;font:inherit;cursor:pointer;touch-action:manipulation";
+          const title = document.createElement("strong");
+          title.textContent = item.file.name.replace(/\\.track$/i, "").replace(/_/g, " ");
+          title.style.cssText = "font-size:18px;overflow-wrap:anywhere";
+          const action = document.createElement("span");
+          action.textContent = "Tap to load track";
+          action.style.cssText = "font-size:14px;opacity:.8";
+          card.append(title, action);
+          card.addEventListener("click", async () => {
+            action.textContent = "Opening track importer…";
+            card.disabled = true;
+            try {
+              await openNativeImporter(item.code);
+              action.textContent = "Track sent to PolyTrack";
+            } catch (error) {
+              console.error("Could not open native track importer:", error);
+              try {
+                await navigator.clipboard.writeText(item.code);
+                action.textContent = "Track code copied — open PolyTrack Import and paste";
+              } catch (_) {
+                action.textContent = "Open PolyTrack Import and paste the track code manually";
+              }
+            } finally {
+              card.disabled = false;
             }
-          } catch (error) {
-            console.error("Could not render Carson track:", item.file.name, error);
-            result.failures.push(item.file.name + ": " + (error?.message || "render failed"));
-          }
+          });
+          list.appendChild(card);
         }
 
         if (!list.children.length) {
