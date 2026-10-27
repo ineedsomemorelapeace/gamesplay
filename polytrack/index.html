@@ -53,7 +53,7 @@
       // making leaderboard requests; otherwise the first requests can escape interception.
       (async () => {
         try {
-          await import("./supabase-backend.js?v=20261027-5");
+          await import("./supabase-backend.js?v=20261027-6");
         } catch (error) {
           console.error("PolyTrack Supabase bridge failed to load:", error);
         }
@@ -64,8 +64,8 @@
           script.onerror = () => { console.error("Failed to load " + src); resolve(false); };
           document.head.appendChild(script);
         });
-        await loadScript("main.bundle.js?v=20261027-5");
-        await loadScript("carson-tracks.js?v=20261027-5");
+        await loadScript("main.bundle.js?v=20261027-6");
+        await loadScript("carson-tracks.js?v=20261027-6");
       })();
     </script>
     <script src="/assets/theme-loader.js"></script>
