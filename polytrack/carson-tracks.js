@@ -11,8 +11,9 @@
       .button.carson { position:relative; background-size:cover; background-position:center; }
       .button.carson .cover { position:absolute; inset:0; background-size:cover!important; background-position:center!important; }
       .button.carson > span { position:relative; z-index:1; }
-      .carson-tracks-container { display:none; }
+      .carson-tracks-container { display:none; width:100%; box-sizing:border-box; grid-column:1 / -1; }
       .carson-tracks-container.open { display:block; }
+      .carson-tracks-container .carson-track-list { width:100%; box-sizing:border-box; }
       .carson-tracks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 4px 12px; border-bottom:4px solid rgba(180,198,232,.48); margin:0 4px 22px; }
       .carson-tracks-heading { margin:0; color:#f4f7ff; text-shadow:0 2px 3px rgba(0,0,0,.45); font-size:clamp(22px,2.2vw,34px); font-weight:700; line-height:1.2; }
       .carson-tracks-submit { display:inline-flex; align-items:center; justify-content:center; gap:9px; flex:0 0 auto; border:0; border-radius:0; min-height:42px; padding:7px 15px; color:#f7f8ff; background:#17254f; box-shadow:inset 0 0 0 1px rgba(190,210,255,.12); font:inherit; font-size:clamp(16px,1.6vw,24px); font-weight:700; text-shadow:0 1px 2px rgba(0,0,0,.5); cursor:pointer; clip-path:polygon(8% 0,100% 0,92% 100%,0 100%); }
@@ -41,6 +42,7 @@
     if (!community || !custom || containers.length < 1) return;
     // Anchor to the native Custom section; the game can expose a different number of containers during startup.
     const customContainer = containers[containers.length - 1];
+    const tracksParent = customContainer.parentElement;
     const tabs = custom.parentElement;
     const button = document.createElement("button");
     button.className = "button carson";
@@ -65,7 +67,8 @@
 
     const container = document.createElement("div");
     container.className = "tracks-container no-group-containers carson-tracks-container";
-    customContainer.parentElement.insertBefore(container, customContainer);
+    // Keep Carson Tracks in the same shared track-list area as Official/Community/Custom.
+    tracksParent.insertBefore(container, customContainer);
     const toolbar = document.createElement("div");
     toolbar.className = "carson-tracks-toolbar";
     const heading = document.createElement("h2");
@@ -85,8 +88,12 @@
       document.querySelectorAll(".tracks-container").forEach(c => c.classList.toggle("open", c === container));
       loadTracks();
     });
-    custom.addEventListener("click", () => container.classList.remove("open"));
-    community.addEventListener("click", () => container.classList.remove("open"));
+    // Delegate tab changes so returning from gameplay/recreated menus cannot leave stale handlers.
+    tabs.addEventListener("click", event => {
+      const tab = event.target.closest(".button.official,.button.community,.button.custom,.button.carson");
+      if (!tab) return;
+      if (tab !== button) container.classList.remove("open");
+    });
     installed = true;
 
     let rendered = false;
@@ -244,6 +251,15 @@
         list.innerHTML = '<div class="carson-track-empty">Could not load Carson tracks after retries. Tap Carson Tracks to try again.</div>';
       }
     }
+
+    // Reset stale UI after PolyTrack returns from gameplay. Re-render cached track data
+    // into the current container; never depend on DOM nodes from the previous menu.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && !container.isConnected) {
+        installed = false;
+        install();
+      }
+    });
 
     // Begin the network work during startup, not when Carson Tracks is opened.
     preloadTracks().catch(error => console.warn("Carson track preload will retry when opened:", error));
