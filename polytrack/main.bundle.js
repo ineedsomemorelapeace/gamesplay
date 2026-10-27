@@ -4743,7 +4743,7 @@
           (x = new WeakMap()),
           (S = new WeakMap()),
           (k = new WeakMap()));
-        const M = class {
+        const M = class { static { window.__carsonTrackParser = this; }
           constructor(e, t, n, r, a, s, o) {
             (v.set(this, void 0),
               y.set(this, void 0),
