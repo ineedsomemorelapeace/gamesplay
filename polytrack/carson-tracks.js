@@ -1,6 +1,19 @@
 /* Carson Tracks extension for the PolyTrack selection screen. */
 (() => {
-  const API = "https://api.github.com/repos/ineedsomemorelapeace/gamesplay/contents/polytrack/tracks/carson";
+  // Keep the small track manifest local: GitHub's directory API and raw.githubusercontent.com
+  // are unreliable/blocked on some iPad networks. Track files are served by the same
+  // GitHub Pages origin as the game, just like its other static assets.
+  const TRACK_FILES = [
+    "Dexton’s_Impossible_Track.track",
+    "JP's_Track.track",
+    "Jackson_Bronze.track",
+    "Twins_😭.track"
+  ].map(name => ({
+    name,
+    type: "file",
+    size: 1,
+    download_url: new URL("tracks/carson/" + encodeURIComponent(name), document.baseURI).href
+  }));
   const FORM = "https://forms.gle/yFXbuVSDimBbD9fz5";
   if (!document.querySelector("#carson-tracks-style")) {
     const style = document.createElement("style");
@@ -110,35 +123,18 @@
     }
 
     async function downloadTrack(file) {
-      let exported;
-      try {
-        const response = await fetchWithRetry(file.download_url, {}, 3);
-        exported = await response.text();
-      } catch (directError) {
-        // Safari/content filters can fail on raw.githubusercontent.com even when api.github.com works.
-        const response = await fetchWithRetry(API + "/" + encodeURIComponent(file.name) + "?ref=main", {
-          headers: { Accept: "application/vnd.github+json" }
-        });
-        const apiFile = await response.json();
-        if (!apiFile.content || apiFile.encoding !== "base64") {
-          throw new Error("GitHub API returned no base64 file content");
-        }
-        const binary = atob(apiFile.content.replace(/\s/g, ""));
-        const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-        exported = new TextDecoder("utf-8").decode(bytes);
-      }
+      const response = await fetchWithRetry(file.download_url, {}, 5);
+      const exported = (await response.text()).replace(/^\\uFEFF/, "").trim();
+      if (!exported) throw new Error("Track file is empty");
 
-      exported = exported.replace(/^\uFEFF/, "").trim();
       const parsed = window.__carsonParseTrack(exported);
       if (!parsed || !parsed.trackMetadata || !parsed.trackData) {
         throw new Error("PolyTrack did not recognize this export format");
       }
 
-      const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
+      const name = file.name.replace(/\\.track$/i, "").replace(/_/g, " ");
       try { parsed.trackMetadata.name = name; } catch (_) {}
-      // Stable filename-based identity: every current and future Carson track gets the
-      // same ID on listing, submission, and leaderboard lookup, regardless of punctuation/case.
-      const stableName = file.name.replace(/\.track$/i, "").normalize("NFKD").toLowerCase()
+      const stableName = file.name.replace(/\\.track$/i, "").normalize("NFKD").toLowerCase()
         .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
       const stableId = "carson-" + (stableName || "unnamed-track");
       try {
@@ -153,17 +149,12 @@
       return { file, parsed };
     }
 
-    // Start fetching and parsing in the background as soon as the game UI is ready.
+    // Same-origin static file URLs: no GitHub API calls and no cross-origin raw-file requests.
     function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        const response = await fetchWithRetry(API + "?ref=main", {}, 5);
-        const files = (await response.json())
-          .filter(f => f.type === "file" && f.name.toLowerCase().endsWith(".track") && f.name.toLowerCase() !== "a.track" && f.size > 0)
-          .sort((a, b) => a.name.localeCompare(b.name));
-        // The game bundle creates these hooks asynchronously while initializing its track UI.
-        // Wait for them instead of caching a startup race as a failed preload.
-        const hookDeadline = Date.now() + 10000;
+        const files = TRACK_FILES.slice().sort((a, b) => a.name.localeCompare(b.name));
+        const hookDeadline = Date.now() + 30000;
         while ((typeof window.__carsonParseTrack !== "function" ||
                 typeof window.__carsonTrackRender !== "function") && Date.now() < hookDeadline) {
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -171,8 +162,7 @@
         if (typeof window.__carsonParseTrack !== "function" || typeof window.__carsonTrackRender !== "function") {
           throw new Error("PolyTrack track hooks did not initialize");
         }
-        // Limit concurrency for Safari/iPad and slower connections. Retry each file
-        // independently so one slow download cannot cause the whole list to be abandoned.
+
         const results = new Array(files.length);
         let nextIndex = 0;
         async function worker() {
@@ -203,11 +193,10 @@
           failures: results.filter(result => result && !result.ok).map(result => result.error),
           fileCount: files.length
         };
-        // Keep successful preload results cached; allow a tap to retry if any file failed.
         if (output.failures.length) preloadPromise = null;
         return output;
       })().catch(error => {
-        preloadPromise = null; // Allow a later tap to retry if startup networking failed.
+        preloadPromise = null;
         throw error;
       });
       return preloadPromise;
