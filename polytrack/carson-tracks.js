@@ -128,7 +128,7 @@
 
     async function downloadTrack(file) {
       const response = await fetchWithRetry(file.download_url, {}, 5);
-      const exported = (await response.text()).replace(/^\\uFEFF/, "").trim();
+      const exported = (await response.text()).replace(/^\uFEFF/, "").trim();
       if (!exported) throw new Error("Track file is empty");
 
       const parsed = window.__carsonParseTrack(exported);
@@ -136,9 +136,9 @@
         throw new Error("PolyTrack did not recognize this export format");
       }
 
-      const name = file.name.replace(/\\.track$/i, "").replace(/_/g, " ");
+      const name = file.name.replace(/\.track$/i, "").replace(/_/g, " ");
       try { parsed.trackMetadata.name = name; } catch (_) {}
-      const stableName = file.name.replace(/\\.track$/i, "").normalize("NFKD").toLowerCase()
+      const stableName = file.name.replace(/\.track$/i, "").normalize("NFKD").toLowerCase()
         .replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
       const stableId = "carson-" + (stableName || "unnamed-track");
       try {
