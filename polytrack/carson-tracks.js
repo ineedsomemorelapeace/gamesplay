@@ -150,73 +150,45 @@
       return { file, code };
     }
 
-    // Same-origin static file URLs: no GitHub API calls and no cross-origin raw-file requests.
-    function preloadTracks() {
+    // Load the checked-in manifest first. GitHub's API is often rate-limited or blocked
+    // by school filters, and is unnecessary for files hosted on the same GitHub Pages site.
+    async function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        // Manifest and track contents are served by this GitHub Pages site.
-        // The browser never calls GitHub's API or raw.githubusercontent.com.
-        // Prefer live directory discovery so adding a .track file needs no manifest edit.
-        // If the school filter blocks the GitHub API, fall back to the checked-in manifest.
-        let entries;
-        try {
-          const directoryResponse = await fetchWithRetry(DIRECTORY_API, {
-            headers: { Accept: "application/vnd.github+json" }
-          }, 2);
-          const directory = await directoryResponse.json();
-          if (!Array.isArray(directory)) throw new Error("GitHub directory response was not an array");
-          entries = directory
-            .filter(entry => entry.type === "file" && entry.name.toLowerCase().endsWith(".track"))
-            .map(entry => ({ name: entry.name }));
-        } catch (directoryError) {
-          console.warn("Carson directory discovery unavailable; using manifest:", directoryError);
-          const manifestResponse = await fetchWithRetry(MANIFEST, {}, 3);
-          const manifest = await manifestResponse.json();
-          entries = Array.isArray(manifest) ? manifest : manifest.tracks;
-        }
-        if (!Array.isArray(entries)) throw new Error("Carson track list is not an array");
+        const manifestResponse = await fetchWithRetry(MANIFEST, {}, 3);
+        const manifest = await manifestResponse.json();
+        const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
+        if (!Array.isArray(entries)) throw new Error("Carson manifest has no tracks array");
+
         const files = entries
           .map(entry => typeof entry === "string" ? { name: entry } : entry)
           .filter(file => file && typeof file.name === "string" &&
             file.name.toLowerCase().endsWith(".track") && file.name.toLowerCase() !== "a.track")
           .map(file => ({
             name: file.name,
-            download_url: new URL("tracks/carson/" + encodeURIComponent(file.name), SITE_BASE).href
+            // Encode each path segment only; keep the URL rooted at this deployed PolyTrack folder.
+            url: new URL("tracks/carson/" + encodeURIComponent(file.name), SITE_BASE).href
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
-        const results = new Array(files.length);
-        let nextIndex = 0;
-        async function worker() {
-          while (nextIndex < files.length) {
-            const index = nextIndex++;
-            const file = files[index];
-            let lastError;
-            for (let attempt = 0; attempt < 4; attempt++) {
-              try {
-                results[index] = { ok: true, value: await downloadTrack(file) };
-                lastError = null;
-                break;
-              } catch (error) {
-                lastError = error;
-                console.warn("Carson track attempt " + (attempt + 1) + " failed:", file.name, error);
-                if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-              }
-            }
-            if (lastError) {
-              console.error("Could not preload Carson track:", file.name, lastError);
-              results[index] = { ok: false, error: file.name + ": " + (lastError?.message || "unknown error") };
-            }
+        if (!files.length) return { tracks: [], failures: [], fileCount: 0 };
+        const results = await Promise.all(files.map(async file => {
+          try {
+            const response = await fetchWithRetry(file.url, {}, 3);
+            const code = (await response.text()).replace(/^\\uFEFF/, "").trim();
+            if (!code) throw new Error("empty response");
+            if (!/^(PolyTrack|v3)/.test(code)) throw new Error("response is not a PolyTrack export");
+            return { ok: true, value: { file, code } };
+          } catch (error) {
+            console.error("Carson track fetch failed:", file.name, file.url, error);
+            return { ok: false, error: file.name + ": " + (error?.message || "fetch failed") };
           }
-        }
-        await Promise.all(Array.from({ length: Math.min(2, files.length) }, () => worker()));
-        const output = {
-          tracks: results.filter(result => result?.ok).map(result => result.value),
-          failures: results.filter(result => result && !result.ok).map(result => result.error),
+        }));
+        return {
+          tracks: results.filter(result => result.ok).map(result => result.value),
+          failures: results.filter(result => !result.ok).map(result => result.error),
           fileCount: files.length
         };
-        if (output.failures.length) preloadPromise = null;
-        return output;
       })().catch(error => {
         preloadPromise = null;
         throw error;
