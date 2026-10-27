@@ -38085,6 +38085,7 @@
             return (l.putImageData(c, 0, 0), o);
           }
         };
+        window.__carsonTrackParser = M;
       },
       8566: (e, t, n) => {
         "use strict";
