@@ -25,6 +25,14 @@
       .carson-track-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:18px; padding:0 4px 24px; }
       .carson-track-empty { grid-column:1/-1; padding:16px 4px; font-size:16px; opacity:.85; }
       .carson-tracks-container .track { cursor:pointer; }
+      .carson-track-list { grid-template-columns:repeat(4,minmax(0,1fr)); gap:22px 28px; }
+      .carson-native-card { overflow:hidden; min-width:0; background:#142653; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); }
+      .carson-native-title { min-height:36px; padding:7px 5px; display:flex; align-items:center; justify-content:center; text-align:center; overflow-wrap:anywhere; background:#222f60; color:#fff; font-size:clamp(14px,1.55vw,22px); font-weight:700; }
+      .carson-native-preview { display:block; width:100%; height:clamp(150px,17vw,235px); padding:12px; border:0; background:#142653; cursor:pointer; }
+      .carson-native-overhead { display:flex; width:100%; height:100%; align-items:center; justify-content:center; }
+      .carson-native-overhead svg { width:100%; height:100%; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+      .carson-native-record { min-height:35px; padding:7px 4px; display:flex; align-items:center; justify-content:center; text-align:center; background:#222f60; color:#fff; font-size:clamp(13px,1.35vw,19px); font-weight:700; }
+      @media(max-width:700px) { .carson-track-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .carson-native-preview { height:155px; } }
       @media(max-width:600px) { .carson-tracks-toolbar { align-items:flex-start; flex-wrap:wrap; } .carson-track-list { grid-template-columns:repeat(auto-fill,minmax(135px,1fr)); gap:10px; } }
     `;
     document.head.appendChild(style);
@@ -208,48 +216,54 @@
           return;
         }
 
-        // Native parser globals are private to the bundled game and are not exposed.
-        // Build track cards here instead of blocking the whole list waiting for them.
+        // Use the same compact title / overhead-preview / record layout as native track cards.
+        // Keep records scoped to Carson Tracks so these tracks never get added to Custom Tracks.
+        const recordKey = item => "carson-track-record:" + item.file.name;
         for (const item of result.tracks) {
           const name = item.file.name.slice(0, -6).replace(/_/g, " ");
           const card = document.createElement("article");
           card.className = "track carson-native-card";
-          card.style.cssText = "overflow:hidden;background:#14244f;color:white;display:flex;flex-direction:column;min-width:0";
           const title = document.createElement("div");
+          title.className = "carson-native-title";
           title.textContent = name;
-          title.style.cssText = "background:#222e5c;padding:8px 5px;text-align:center;font-size:clamp(14px,1.6vw,22px);font-weight:700;min-height:36px;display:flex;align-items:center;justify-content:center;overflow-wrap:anywhere";
-          const play = document.createElement("button");
-          play.type = "button";
-          play.setAttribute("aria-label", "Play " + name);
-          play.style.cssText = "border:0;background:#14244f;min-height:190px;width:100%;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:12px";
-          let seed = 0;
-          for (let i = 0; i < item.code.length; i += Math.max(1, Math.floor(item.code.length / 120))) seed = (Math.imul(seed, 31) + item.code.charCodeAt(i)) >>> 0;
+          const preview = document.createElement("button");
+          preview.type = "button";
+          preview.className = "carson-native-preview";
+          preview.setAttribute("aria-label", "Play " + name);
+          const graphic = document.createElement("div");
+          graphic.className = "carson-native-overhead";
+          // Derive a stable overhead-style path from the track export, not a random icon.
+          // The official TrackData thumbnail API is private in this build, so this is a deterministic
+          // fallback preview rather than pretending the native renderer was available.
+          let seed = 2166136261;
+          for (let i = 0; i < item.code.length; i++) seed = Math.imul(seed ^ item.code.charCodeAt(i), 16777619) >>> 0;
           const points = [];
-          let x = 20, y = 25;
-          for (let i = 0; i < 18; i++) {
+          for (let i = 0; i < 28; i++) {
             seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-            x = Math.max(10, Math.min(90, x + ((seed >>> 16) % 31) - 15));
+            const px = 12 + (seed % 76);
             seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-            y = Math.max(10, Math.min(90, y + ((seed >>> 16) % 31) - 15));
-            points.push(x + "," + y);
+            const py = 12 + (seed % 76);
+            points.push(px + "," + py);
           }
           const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           svg.setAttribute("viewBox", "0 0 100 100");
-          svg.setAttribute("width", "100%");
-          svg.setAttribute("height", "170");
-          const line = document.createElementNS(svg.namespaceURI, "polyline");
-          line.setAttribute("points", points.join(" "));
-          line.setAttribute("fill", "none");
-          line.setAttribute("stroke", "#fff");
-          line.setAttribute("stroke-width", "5");
-          line.setAttribute("stroke-linejoin", "round");
-          svg.appendChild(line);
-          play.appendChild(svg);
+          svg.setAttribute("role", "img");
+          svg.setAttribute("aria-label", name + " track preview");
+          const path = document.createElementNS(svg.namespaceURI, "polyline");
+          path.setAttribute("points", points.join(" "));
+          path.setAttribute("fill", "none");
+          path.setAttribute("stroke", "#fff");
+          path.setAttribute("stroke-width", "3.5");
+          path.setAttribute("stroke-linecap", "square");
+          path.setAttribute("stroke-linejoin", "miter");
+          svg.appendChild(path);
+          graphic.appendChild(svg);
+          preview.appendChild(graphic);
           const record = document.createElement("div");
-          record.style.cssText = "background:#222e5c;text-align:center;padding:7px 4px;font-size:clamp(13px,1.4vw,19px);font-weight:700;min-height:22px";
-          record.textContent = "No record";
-          play.addEventListener("click", async () => {
-            play.disabled = true;
+          record.className = "carson-native-record";
+          record.textContent = localStorage.getItem(recordKey(item)) || "No record";
+          preview.addEventListener("click", async () => {
+            preview.disabled = true;
             record.textContent = "Loading…";
             try {
               await openNativeImporter(item.code);
@@ -257,9 +271,9 @@
             } catch (error) {
               console.error("Could not open Carson track:", item.file.name, error);
               record.textContent = "Tap to retry";
-            } finally { play.disabled = false; }
+            } finally { preview.disabled = false; }
           });
-          card.append(title, play, record);
+          card.append(title, preview, record);
           list.appendChild(card);
         }
 
