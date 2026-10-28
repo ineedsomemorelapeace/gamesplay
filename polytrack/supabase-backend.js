@@ -442,6 +442,22 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return "";
   }
 
+  const leaderboardReadCache = new Map();
+  const leaderboardInflight = new Map();
+  const LEADERBOARD_CACHE_MS = 12000;
+
+  async function cachedLeaderboardRead(key, loader) {
+    const cached = leaderboardReadCache.get(key);
+    if (cached && Date.now() - cached.at < LEADERBOARD_CACHE_MS) return cached.value;
+    if (leaderboardInflight.has(key)) return leaderboardInflight.get(key);
+    const promise = loader().then(value => {
+      leaderboardReadCache.set(key, { at: Date.now(), value });
+      return value;
+    }).finally(() => leaderboardInflight.delete(key));
+    leaderboardInflight.set(key, promise);
+    return promise;
+  }
+
   async function handleLeaderboardRequest(url, method, bodyText = "") {
     const parsedUrl = new URL(String(url), location.href);
     const params = parsedUrl.searchParams;
@@ -453,48 +469,36 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const identities = trackIdentityCandidates(trackId);
       const slugCandidates = [...new Set(identities.map(slugify))];
       const rawCandidates = [...new Set(identities)];
-      // Never block the leaderboard on a best-effort localStorage/IndexedDB scan.
-      // Some browsers can stall IndexedDB enumeration; import in the background instead.
-      void importLocalBestForTrack(trackId).catch(error => console.debug("Local best import skipped:", error));
       const skip = Math.max(0, Number.parseInt(params.get("skip") || "0", 10) || 0);
       const amount = Math.max(1, Math.min(100, Number.parseInt(params.get("amount") || "10", 10) || 10));
-      const selectColumns = "id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at";
-      const visibleStatuses = ["waiting", "yes"];
-      // Query canonical slugs and legacy raw names separately. Some older submissions used
-      // different track identifiers, so a single .in(slug) query silently missed valid rows.
-      const queries = [
-        client.from("polytrack_times")
-          .select(selectColumns, { count: "exact" })
-          .in("track_slug", slugCandidates)
+      const cacheKey = JSON.stringify([slugCandidates, rawCandidates, skip, amount]);
+      const { data, total } = await cachedLeaderboardRead(cacheKey, async () => {
+        const selectColumns = "id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at";
+        const visibleStatuses = ["waiting", "yes"];
+        // One OR query handles current slugs and legacy track names with a single request.
+        const filters = [
+          slugCandidates.length ? "track_slug.in.(" + slugCandidates.map(v => '"' + v.replace(/"/g, '\\"') + '"').join(",") + ")" : "",
+          rawCandidates.length ? "track_name.in.(" + rawCandidates.map(v => '"' + v.replace(/"/g, '\\"') + '"').join(",") + ")" : ""
+        ].filter(Boolean);
+        let query = client.from("polytrack_times").select(selectColumns, { count: "exact" })
           .in("verification_status", visibleStatuses)
-          .order("time_ms", { ascending: true }).limit(500),
-        client.from("polytrack_times")
-          .select(selectColumns, { count: "exact" })
-          .in("track_name", rawCandidates)
-          .in("verification_status", visibleStatuses)
-          .order("time_ms", { ascending: true }).limit(500)
-      ];
-      const results = await Promise.all(queries);
-      const failed = results.find(result => result.error);
-      if (failed?.error) {
-        const error = failed.error;
-        throw new Error("Supabase read failed (" + (error.code || "unknown") + "): " + error.message +
-          (error.details ? " — " + error.details : "") +
-          (error.hint ? " — Hint: " + error.hint : ""));
-      }
-      const byId = new Map();
-      let total = 0;
-      for (const result of results) {
-        total = Math.max(total, Number(result.count) || 0);
-        for (const row of result.data || []) byId.set(String(row.id), row);
-      }
-      const allRows = [...byId.values()].sort((a, b) =>
-        Number(a.time_ms) - Number(b.time_ms) || Number(a.id) - Number(b.id));
-      total = Math.max(total, allRows.length);
-      const data = allRows.slice(skip, skip + amount);
-      console.debug("PolyTrack leaderboard identity:", {
-        requested: trackId, slugs: slugCandidates, names: rawCandidates,
-        rows: allRows.length, total, sourceQueries: queries.length
+          .order("time_ms", { ascending: true }).limit(500);
+        if (filters.length === 1) {
+          const [column, values] = filters[0].split(".in.(");
+          query = query.in(column, values.slice(0, -1).split(",").map(v => v.replace(/^"|"$/g, "")));
+        } else {
+          // Use the PostgREST OR expression, safely quoting each candidate.
+          query = query.or(filters.join(","));
+        }
+        const { data: rows, count, error } = await query;
+        if (error) throw new Error("Supabase read failed (" + (error.code || "unknown") + "): " + error.message +
+          (error.details ? " — " + error.details : "") + (error.hint ? " — Hint: " + error.hint : ""));
+        const unique = new Map((rows || []).map(row => [String(row.id), row]));
+        const allRows = [...unique.values()].sort((a, b) =>
+          Number(a.time_ms) - Number(b.time_ms) || Number(a.id) - Number(b.id));
+        const totalRows = Math.max(Number(count) || 0, allRows.length);
+        console.debug("PolyTrack leaderboard loaded", { requested: trackId, rows: allRows.length, total: totalRows });
+        return { data: allRows.slice(skip, skip + amount), total: totalRows };
       });
       const entries = (data || []).map(row => ({
         id: Number(row.id) || 0,
