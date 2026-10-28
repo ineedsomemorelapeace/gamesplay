@@ -421,8 +421,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       try { localStorage.setItem(marker, "1"); } catch {}
       console.info("Imported saved PolyTrack personal best for", wanted);
     } catch (error) {
-      scannedLocalBestKeys.delete(marker);
-      console.warn("Could not import saved PolyTrack personal best:", error);
+      // Do not retry on every leaderboard refresh; that can hammer Supabase when storage scans fail.
+      console.warn("Could not import saved PolyTrack personal best (will not retry this session):", error);
     }
   }
 
@@ -463,16 +463,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       // Query canonical slugs and legacy raw names separately. Some older submissions used
       // different track identifiers, so a single .in(slug) query silently missed valid rows.
       const queries = [
-        ...slugCandidates.map(slug => client.from("polytrack_times")
+        client.from("polytrack_times")
           .select(selectColumns, { count: "exact" })
-          .eq("track_slug", slug)
+          .in("track_slug", slugCandidates)
           .in("verification_status", visibleStatuses)
-          .order("time_ms", { ascending: true }).limit(500)),
-        ...rawCandidates.map(name => client.from("polytrack_times")
+          .order("time_ms", { ascending: true }).limit(500),
+        client.from("polytrack_times")
           .select(selectColumns, { count: "exact" })
-          .eq("track_name", name)
+          .in("track_name", rawCandidates)
           .in("verification_status", visibleStatuses)
-          .order("time_ms", { ascending: true }).limit(500))
+          .order("time_ms", { ascending: true }).limit(500)
       ];
       const results = await Promise.all(queries);
       const failed = results.find(result => result.error);
