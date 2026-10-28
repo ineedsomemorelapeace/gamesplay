@@ -285,6 +285,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
             xhr.dispatchEvent(new Event("loadend"));
           } catch (error) {
             console.error("PolyTrack Supabase leaderboard request failed:", error);
+            showLeaderboardIssue(xhr.__polyTrackUrl, xhr.__polyTrackMethod, error, { transport: "XMLHttpRequest" });
             xhr.__polyTrackInterceptedResponseHeaders = { "content-type": "application/json; charset=utf-8" };
             for (const [key, value] of Object.entries({
               readyState: 4, status: 500, statusText: "Error", responseText: "{}", response: {}
@@ -442,6 +443,54 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return "";
   }
 
+  // Show a small diagnostic control when the game only displays a generic leaderboard error.
+  let lastLeaderboardIssue = null;
+  let leaderboardIssuePanel = null;
+  function showLeaderboardIssue(url, method, error, extra = {}) {
+    lastLeaderboardIssue = {
+      title: "PolyTrack leaderboard loading failure",
+      time: new Date().toISOString(),
+      page: location.href,
+      method: String(method || "GET").toUpperCase(),
+      requestUrl: String(url || ""),
+      error: String(error?.message || error || "Unknown error"),
+      stack: typeof error?.stack === "string" ? error.stack : null,
+      ...extra
+    };
+    window.__polytrackLastLeaderboardIssue = lastLeaderboardIssue;
+    if (!document.body) return;
+    if (!leaderboardIssuePanel) {
+      leaderboardIssuePanel = document.createElement("div");
+      leaderboardIssuePanel.id = "polytrack-leaderboard-diagnostic";
+      leaderboardIssuePanel.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:2147483647;display:flex;align-items:center;gap:8px;padding:8px 10px;background:#241719;color:#fff;border:1px solid #ff6b6b;border-radius:9px;box-shadow:0 4px 18px #0008;font:12px/1.3 system-ui,sans-serif;max-width:calc(100vw - 24px);";
+      const label = document.createElement("span");
+      label.textContent = "Leaderboard error";
+      label.style.cssText = "font-weight:600;";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Copy full issue";
+      button.style.cssText = "cursor:pointer;border:0;border-radius:6px;padding:7px 10px;background:#ff6b6b;color:#1b1010;font:600 12px system-ui,sans-serif;white-space:nowrap;";
+      button.addEventListener("click", async () => {
+        const report = JSON.stringify(lastLeaderboardIssue || { title: "PolyTrack leaderboard loading failure" }, null, 2);
+        try {
+          await navigator.clipboard.writeText(report);
+          button.textContent = "Copied!";
+          setTimeout(() => { if (button.isConnected) button.textContent = "Copy full issue"; }, 1800);
+        } catch {
+          const field = document.createElement("textarea");
+          field.value = report; field.readOnly = true;
+          field.style.cssText = "position:fixed;left:8px;top:8px;width:80vw;height:45vh;z-index:2147483647;background:#fff;color:#000;";
+          document.body.appendChild(field); field.focus(); field.select();
+          let copied = false;
+          try { copied = document.execCommand("copy"); } catch {}
+          button.textContent = copied ? "Copied!" : "Select text to copy";
+          if (copied) field.remove();
+        }
+      });
+      leaderboardIssuePanel.append(label, button);
+      document.body.appendChild(leaderboardIssuePanel);
+    }
+  }
   const leaderboardReadCache = new Map();
   const leaderboardInflight = new Map();
   const LEADERBOARD_CACHE_MS = 12000;
@@ -574,6 +623,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         });
       } catch (error) {
         console.error("PolyTrack Supabase leaderboard request failed:", error);
+        showLeaderboardIssue(url, init.method || input?.method || "GET", error, { transport: "fetch" });
         return new Response(JSON.stringify({ error: error?.message || "Leaderboard request failed", issue: error?.message || "Unknown error", code: error?.code || null }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
