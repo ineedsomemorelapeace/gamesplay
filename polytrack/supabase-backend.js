@@ -462,20 +462,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     if (!leaderboardIssuePanel) {
       leaderboardIssuePanel = document.createElement("div");
       leaderboardIssuePanel.id = "polytrack-leaderboard-diagnostic";
-      leaderboardIssuePanel.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:2147483647;display:flex;align-items:center;gap:8px;padding:8px 10px;background:#241719;color:#fff;border:1px solid #ff6b6b;border-radius:9px;box-shadow:0 4px 18px #0008;font:12px/1.3 system-ui,sans-serif;max-width:calc(100vw - 24px);";
+      leaderboardIssuePanel.style.cssText = "position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;justify-content:center;gap:14px;padding:14px 18px;background:#241719;color:#fff;border:2px solid #ff6b6b;border-radius:12px;box-shadow:0 5px 24px #000b;font:16px/1.3 system-ui,sans-serif;max-width:calc(100vw - 24px);width:max-content;";
       const label = document.createElement("span");
-      label.textContent = "Leaderboard error";
-      label.style.cssText = "font-weight:600;";
+      label.textContent = "Leaderboard error?";
+      label.style.cssText = "font-weight:700;font-size:16px;"
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "Copy full issue";
-      button.style.cssText = "cursor:pointer;border:0;border-radius:6px;padding:7px 10px;background:#ff6b6b;color:#1b1010;font:600 12px system-ui,sans-serif;white-space:nowrap;";
+      button.textContent = "COPY FULL ISSUE";
+      button.style.cssText = "cursor:pointer;border:0;border-radius:8px;padding:12px 16px;background:#ff6b6b;color:#1b1010;font:800 15px system-ui,sans-serif;white-space:nowrap;min-height:46px;"
       button.addEventListener("click", async () => {
         const report = JSON.stringify(lastLeaderboardIssue || { title: "PolyTrack leaderboard loading failure" }, null, 2);
         try {
           await navigator.clipboard.writeText(report);
           button.textContent = "Copied!";
-          setTimeout(() => { if (button.isConnected) button.textContent = "Copy full issue"; }, 1800);
+          setTimeout(() => { if (button.isConnected) button.textContent = "COPY FULL ISSUE"; }, 1800);
         } catch {
           const field = document.createElement("textarea");
           field.value = report; field.readOnly = true;
@@ -491,6 +491,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       document.body.appendChild(leaderboardIssuePanel);
     }
   }
+  // Keep the copy control visible even when PolyTrack draws its error message on a canvas.
+  function ensureLeaderboardIssueButton() {
+    if (leaderboardIssuePanel || !document.body) return;
+    showLeaderboardIssue(location.href, "GET", "No captured failure yet. Open a track with a leaderboard error, then copy this report again.");
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ensureLeaderboardIssueButton, { once: true });
+  else ensureLeaderboardIssueButton();
   const leaderboardReadCache = new Map();
   const leaderboardInflight = new Map();
   const LEADERBOARD_CACHE_MS = 12000;
