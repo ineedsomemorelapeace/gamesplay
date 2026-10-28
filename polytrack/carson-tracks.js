@@ -218,7 +218,11 @@
         // handling used by Official/Community tracks; never fake a track object or use Import.
         const waitForNative = async () => {
           for (let attempt = 0; attempt < 120; attempt++) {
-            if (typeof window.__carsonTrackParser?.fromExportString === "function" &&
+            // PolyTrack exposes its real export parser independently of the card renderer.
+            // __carsonTrackParser is only assigned after the first native card is created,
+            // so requiring that alias here can deadlock track loading on an empty list.
+            if ((typeof window.__carsonParseTrack === "function" ||
+                 typeof window.__carsonTrackParser?.fromExportString === "function") &&
                 typeof window.__carsonTrackRender === "function") return;
             await new Promise(resolve => setTimeout(resolve, 100));
           }
@@ -230,7 +234,9 @@
         const failures = [...result.failures];
         for (const item of result.tracks) {
           try {
-            const parsed = window.__carsonTrackParser.fromExportString(item.code);
+            const parsed = typeof window.__carsonParseTrack === "function"
+              ? window.__carsonParseTrack(item.code)
+              : window.__carsonTrackParser.fromExportString(item.code);
             if (!parsed?.trackMetadata || !parsed?.trackData ||
                 typeof parsed.trackData.getId !== "function" ||
                 typeof parsed.trackData.createThumbnail !== "function") {
