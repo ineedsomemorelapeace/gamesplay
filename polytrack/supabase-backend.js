@@ -475,19 +475,24 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const { data, total } = await cachedLeaderboardRead(cacheKey, async () => {
         const selectColumns = "id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at";
         const visibleStatuses = ["waiting", "yes"];
-        // One OR query handles current slugs and legacy track names with a single request.
-        const filters = [
-          slugCandidates.length ? "track_slug.in.(" + slugCandidates.map(v => '"' + v.replace(/"/g, '\\"') + '"').join(",") + ")" : "",
-          rawCandidates.length ? "track_name.in.(" + rawCandidates.map(v => '"' + v.replace(/"/g, '\\"') + '"').join(",") + ")" : ""
-        ].filter(Boolean);
+        // Hash-based PolyTrack IDs are identical before and after slugification.
+        // Use a simple indexed IN query for that common case rather than a redundant OR.
+        const sameCandidates = slugCandidates.length === rawCandidates.length &&
+          slugCandidates.every((value, index) => value === rawCandidates[index]);
         let query = client.from("polytrack_times").select(selectColumns, { count: "exact" })
           .in("verification_status", visibleStatuses)
           .order("time_ms", { ascending: true }).limit(500);
-        if (filters.length === 1) {
-          const [column, values] = filters[0].split(".in.(");
-          query = query.in(column, values.slice(0, -1).split(",").map(v => v.replace(/^"|"$/g, "")));
+        if (sameCandidates) {
+          query = query.in("track_slug", slugCandidates);
         } else {
-          // Use the PostgREST OR expression, safely quoting each candidate.
+          // Non-hash IDs may have older rows keyed by their original track name.
+          const quoteFilter = values => values.map(value =>
+            '"' + String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"'
+          ).join(",");
+          const filters = [
+            slugCandidates.length ? "track_slug.in.(" + quoteFilter(slugCandidates) + ")" : "",
+            rawCandidates.length ? "track_name.in.(" + quoteFilter(rawCandidates) + ")" : ""
+          ].filter(Boolean);
           query = query.or(filters.join(","));
         }
         const { data: rows, count, error } = await query;
