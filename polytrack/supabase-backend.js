@@ -460,27 +460,42 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const amount = Math.max(1, Math.min(100, Number.parseInt(params.get("amount") || "10", 10) || 10));
       const selectColumns = "id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at";
       const visibleStatuses = ["waiting", "yes"];
-      // First match canonical slugs (the normal path for all track sections).
-      let { data, error, count } = await client.from("polytrack_times")
-        .select(selectColumns, { count: "exact" })
-        .in("track_slug", slugCandidates)
-        .in("verification_status", visibleStatuses)
-        .order("time_ms", { ascending: true })
-        .range(skip, skip + amount - 1);
-      if (error) throw error;
-      // Backward compatibility for records written by older bridge versions where track_name
-      // retained the un-normalized track ID instead of its canonical slug.
-      if ((!data || data.length === 0) && skip === 0) {
-        const legacy = await client.from("polytrack_times")
+      // Query canonical slugs and legacy raw names separately. Some older submissions used
+      // different track identifiers, so a single .in(slug) query silently missed valid rows.
+      const queries = [
+        ...slugCandidates.map(slug => client.from("polytrack_times")
           .select(selectColumns, { count: "exact" })
-          .in("track_name", rawCandidates)
+          .eq("track_slug", slug)
           .in("verification_status", visibleStatuses)
-          .order("time_ms", { ascending: true })
-          .range(skip, skip + amount - 1);
-        if (legacy.error) throw legacy.error;
-        if (legacy.data?.length) ({ data, count } = legacy);
+          .order("time_ms", { ascending: true }).limit(500)),
+        ...rawCandidates.map(name => client.from("polytrack_times")
+          .select(selectColumns, { count: "exact" })
+          .eq("track_name", name)
+          .in("verification_status", visibleStatuses)
+          .order("time_ms", { ascending: true }).limit(500))
+      ];
+      const results = await Promise.all(queries);
+      const failed = results.find(result => result.error);
+      if (failed?.error) {
+        const error = failed.error;
+        throw new Error("Supabase read failed (" + (error.code || "unknown") + "): " + error.message +
+          (error.details ? " — " + error.details : "") +
+          (error.hint ? " — Hint: " + error.hint : ""));
       }
-      console.debug("PolyTrack leaderboard identity:", { requested: trackId, slugs: slugCandidates, rows: data?.length || 0, total: count || 0 });
+      const byId = new Map();
+      let total = 0;
+      for (const result of results) {
+        total = Math.max(total, Number(result.count) || 0);
+        for (const row of result.data || []) byId.set(String(row.id), row);
+      }
+      const allRows = [...byId.values()].sort((a, b) =>
+        Number(a.time_ms) - Number(b.time_ms) || Number(a.id) - Number(b.id));
+      total = Math.max(total, allRows.length);
+      const data = allRows.slice(skip, skip + amount);
+      console.debug("PolyTrack leaderboard identity:", {
+        requested: trackId, slugs: slugCandidates, names: rawCandidates,
+        rows: allRows.length, total, sourceQueries: queries.length
+      });
       const entries = (data || []).map(row => ({
         id: Number(row.id) || 0,
         userId: "",
@@ -493,8 +508,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         isSelf: false
       }));
       // Never report zero users when rows were returned but PostgREST omitted the count.
-      const total = count == null ? entries.length : Math.max(Number(count) || 0, entries.length);
-      return { status: 200, body: { total, entries, userEntry: null } };
+      const totalCount = Math.max(total, entries.length);
+      return { status: 200, body: { total: totalCount, entries, userEntry: null } };
     }
 
     if (methodUpper === "POST") {
@@ -550,7 +565,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         });
       } catch (error) {
         console.error("PolyTrack Supabase leaderboard request failed:", error);
-        return new Response(JSON.stringify({ error: error?.message || "Leaderboard request failed" }), {
+        return new Response(JSON.stringify({ error: error?.message || "Leaderboard request failed", issue: error?.message || "Unknown error", code: error?.code || null }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
         });
