@@ -285,7 +285,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
             xhr.dispatchEvent(new Event("loadend"));
           } catch (error) {
             console.error("PolyTrack Supabase leaderboard request failed:", error);
-            showLeaderboardIssue(xhr.__polyTrackUrl, xhr.__polyTrackMethod, error, { transport: "XMLHttpRequest" });
+
             xhr.__polyTrackInterceptedResponseHeaders = { "content-type": "application/json; charset=utf-8" };
             for (const [key, value] of Object.entries({
               readyState: 4, status: 500, statusText: "Error", responseText: "{}", response: {}
@@ -443,61 +443,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return "";
   }
 
-  // Show a small diagnostic control when the game only displays a generic leaderboard error.
-  let lastLeaderboardIssue = null;
-  let leaderboardIssuePanel = null;
-  function showLeaderboardIssue(url, method, error, extra = {}) {
-    lastLeaderboardIssue = {
-      title: "PolyTrack leaderboard loading failure",
-      time: new Date().toISOString(),
-      page: location.href,
-      method: String(method || "GET").toUpperCase(),
-      requestUrl: String(url || ""),
-      error: String(error?.message || error || "Unknown error"),
-      stack: typeof error?.stack === "string" ? error.stack : null,
-      ...extra
-    };
-    window.__polytrackLastLeaderboardIssue = lastLeaderboardIssue;
-    if (!document.body) return;
-    if (!leaderboardIssuePanel) {
-      leaderboardIssuePanel = document.createElement("div");
-      leaderboardIssuePanel.id = "polytrack-leaderboard-diagnostic";
-      leaderboardIssuePanel.style.cssText = "position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;justify-content:center;gap:14px;padding:14px 18px;background:#241719;color:#fff;border:2px solid #ff6b6b;border-radius:12px;box-shadow:0 5px 24px #000b;font:16px/1.3 system-ui,sans-serif;max-width:calc(100vw - 24px);width:max-content;";
-      const label = document.createElement("span");
-      label.textContent = "Leaderboard error?";
-      label.style.cssText = "font-weight:700;font-size:16px;"
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "COPY FULL ISSUE";
-      button.style.cssText = "cursor:pointer;border:0;border-radius:8px;padding:12px 16px;background:#ff6b6b;color:#1b1010;font:800 15px system-ui,sans-serif;white-space:nowrap;min-height:46px;"
-      button.addEventListener("click", async () => {
-        const report = JSON.stringify(lastLeaderboardIssue || { title: "PolyTrack leaderboard loading failure" }, null, 2);
-        try {
-          await navigator.clipboard.writeText(report);
-          button.textContent = "Copied!";
-          setTimeout(() => { if (button.isConnected) button.textContent = "COPY FULL ISSUE"; }, 1800);
-        } catch {
-          const field = document.createElement("textarea");
-          field.value = report; field.readOnly = true;
-          field.style.cssText = "position:fixed;left:8px;top:8px;width:80vw;height:45vh;z-index:2147483647;background:#fff;color:#000;";
-          document.body.appendChild(field); field.focus(); field.select();
-          let copied = false;
-          try { copied = document.execCommand("copy"); } catch {}
-          button.textContent = copied ? "Copied!" : "Select text to copy";
-          if (copied) field.remove();
-        }
-      });
-      leaderboardIssuePanel.append(label, button);
-      document.body.appendChild(leaderboardIssuePanel);
-    }
-  }
-  // Keep the copy control visible even when PolyTrack draws its error message on a canvas.
-  function ensureLeaderboardIssueButton() {
-    if (leaderboardIssuePanel || !document.body) return;
-    showLeaderboardIssue(location.href, "GET", "No captured failure yet. Open a track with a leaderboard error, then copy this report again.");
-  }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ensureLeaderboardIssueButton, { once: true });
-  else ensureLeaderboardIssueButton();
   const leaderboardReadCache = new Map();
   const leaderboardInflight = new Map();
   const LEADERBOARD_CACHE_MS = 12000;
@@ -630,7 +575,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         });
       } catch (error) {
         console.error("PolyTrack Supabase leaderboard request failed:", error);
-        showLeaderboardIssue(url, init.method || input?.method || "GET", error, { transport: "fetch" });
+
         return new Response(JSON.stringify({ error: error?.message || "Leaderboard request failed", issue: error?.message || "Unknown error", code: error?.code || null }), {
           status: 500,
           headers: { "Content-Type": "application/json" }
