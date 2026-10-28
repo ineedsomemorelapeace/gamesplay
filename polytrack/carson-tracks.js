@@ -25,13 +25,14 @@
       .carson-track-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:18px; padding:0 4px 24px; }
       .carson-track-empty { grid-column:1/-1; padding:16px 4px; font-size:16px; opacity:.85; }
       .carson-tracks-container .track { cursor:pointer; }
-      .carson-track-list { grid-template-columns:repeat(4,minmax(0,1fr)); gap:22px 28px; }
+      .carson-track-list { grid-template-columns:repeat(5,minmax(0,1fr)); gap:16px 22px; }
       .carson-native-card { overflow:hidden; min-width:0; background:#142653; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); }
       .carson-native-title { min-height:36px; padding:7px 5px; display:flex; align-items:center; justify-content:center; text-align:center; overflow-wrap:anywhere; background:#222f60; color:#fff; font-size:clamp(14px,1.55vw,22px); font-weight:700; }
       .carson-native-preview { display:block; width:100%; height:clamp(150px,17vw,235px); padding:12px; border:0; background:#142653; cursor:pointer; }
       .carson-native-overhead { display:flex; width:100%; height:100%; align-items:center; justify-content:center; }
       .carson-native-overhead svg { width:100%; height:100%; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
       .carson-native-record { min-height:35px; padding:7px 4px; display:flex; align-items:center; justify-content:center; text-align:center; background:#222f60; color:#fff; font-size:clamp(13px,1.35vw,19px); font-weight:700; }
+      @media(max-width:900px) { .carson-track-list { grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 18px; } }
       @media(max-width:700px) { .carson-track-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .carson-native-preview { height:155px; } }
       @media(max-width:600px) { .carson-tracks-toolbar { align-items:flex-start; flex-wrap:wrap; } .carson-track-list { grid-template-columns:repeat(auto-fill,minmax(135px,1fr)); gap:10px; } }
     `;
