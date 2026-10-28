@@ -107,11 +107,11 @@
     let preloadPromise = null;
 
 
-    async function fetchWithRetry(url, options = {}, attempts = 4) {
+    async function fetchWithRetry(url, options = {}, attempts = 2, timeoutMs = 9000) {
       let lastError;
       for (let attempt = 0; attempt < attempts; attempt++) {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000);
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
         try {
           const response = await fetch(url, { ...options, signal: controller.signal, cache: "no-store" });
           if (!response.ok) throw new Error("HTTP " + response.status);
@@ -142,7 +142,7 @@
         // first so adding a .track file requires no manifest or JavaScript edits.
         let files = [];
         try {
-          const response = await fetchWithRetry(DIRECTORY_API + "?ref=main", {}, 3);
+          const response = await fetchWithRetry(DIRECTORY_API + "?ref=main", {}, 1, 6000);
           const listing = await response.json();
           if (!Array.isArray(listing)) throw new Error("GitHub folder listing was not an array");
           files = listing
@@ -160,7 +160,7 @@
 
         // The checked-in manifest remains a fallback for networks that block api.github.com.
         if (!files.length) {
-          const manifestResponse = await fetchWithRetry(MANIFEST, {}, 3);
+          const manifestResponse = await fetchWithRetry(MANIFEST, {}, 2, 7000);
           const manifest = await manifestResponse.json();
           const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
           if (!Array.isArray(entries)) throw new Error("Carson manifest has no tracks array");
@@ -180,7 +180,7 @@
         files = [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
         const results = await Promise.all(files.map(async file => {
           try {
-            const response = await fetchWithRetry(file.url, {}, 4);
+            const response = await fetchWithRetry(file.url, {}, 2, 9000);
             const code = (await response.text()).replace(/^\\uFEFF/, "").trim();
             if (!code) throw new Error("empty response");
             if (!/^PolyTrack/i.test(code)) throw new Error("file is not a PolyTrack export");
