@@ -243,7 +243,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   window.XMLHttpRequest = class PolyTrackXHR extends NativeXHR {
     open(method, url, ...rest) {
       this.__polyTrackIceRequest = String(url).includes(BACKEND_HOST) && String(url).includes("/iceServers");
-      this.__polyTrackLeaderboardRequest = isLeaderboardUrl(url) || isRecordingsUrl(url);
+      this.__polyTrackLeaderboardRequest = isLeaderboardUrl(url);
       this.__polyTrackMethod = method;
       this.__polyTrackUrl = url;
       // Always run native open(): PolyTrack's XHR helpers may inspect readyState or headers.
@@ -266,9 +266,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       if (this.__polyTrackLeaderboardRequest) {
         Promise.resolve().then(async () => {
           try {
-            const result = isRecordingsUrl(this.__polyTrackUrl)
-              ? await handleRecordingsRequest(this.__polyTrackUrl)
-              : await handleLeaderboardRequest(this.__polyTrackUrl, this.__polyTrackMethod, bodyToText(body));
+            const result = await handleLeaderboardRequest(this.__polyTrackUrl, this.__polyTrackMethod, bodyToText(body));
             const text = JSON.stringify(result.body);
             xhr.__polyTrackInterceptedResponseHeaders = {
               "content-type": "application/json; charset=utf-8",
@@ -436,11 +434,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     catch { return false; }
   }
 
-  function isRecordingsUrl(value) {
-    try { return new URL(String(value), location.href).pathname.replace(/\\/$/, "").endsWith("/recordings"); }
-    catch { return false; }
-  }
-
   function bodyToText(body) {
     if (typeof body === "string") return body;
     if (body instanceof URLSearchParams) return body.toString();
@@ -464,32 +457,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     }).finally(() => leaderboardInflight.delete(key));
     leaderboardInflight.set(key, promise);
     return promise;
-  }
-
-  async function handleRecordingsRequest(url) {
-    const params = new URL(String(url), location.href).searchParams;
-    const ids = (params.get("ids") || "").split(",").map(value => Number(value.trim()));
-    if (!ids.length || ids.some(value => !Number.isSafeInteger(value) || value <= 0)) {
-      return { status: 400, body: { error: "Invalid recording IDs" } };
-    }
-    const { data, error } = await client.from("polytrack_times")
-      .select("id,replay,time_ms,car_data,verification_status")
-      .in("id", [...new Set(ids)]);
-    if (error) throw new Error("Supabase recordings read failed: " + error.message);
-    const byId = new Map((data || []).map(row => [Number(row.id), row]));
-    // PolyTrack expects an array in the exact same order as the requested IDs.
-    // Missing replay data must remain null; inventing a replay would break validation.
-    return { status: 200, body: ids.map(entryId => {
-      const row = byId.get(entryId);
-      if (!row || typeof row.replay !== "string" || !row.replay) return null;
-      return {
-        recording: row.replay,
-        verifiedState: row.verification_status === "yes" ? 1 : 0,
-        carStyle: typeof row.car_data?.carStyle === "string" && row.car_data.carStyle
-          ? row.car_data.carStyle : "AAAAAAAAAAAAAAAAAAAAAA",
-        frames: Math.max(1, Math.round(Number(row.time_ms) || 1))
-      };
-    }) };
   }
 
   async function handleLeaderboardRequest(url, method, bodyText = "") {
@@ -601,16 +568,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   const NativeFetch = window.fetch.bind(window);
   window.fetch = async function(input, init = {}) {
     const url = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
-    if (url && (isLeaderboardUrl(url) || isRecordingsUrl(url))) {
+    if (url && isLeaderboardUrl(url)) {
       try {
         const method = init.method || input?.method || "GET";
         let body = bodyToText(init.body);
         if (!body && typeof Request !== "undefined" && input instanceof Request && method.toUpperCase() === "POST") {
           body = await input.clone().text();
         }
-        const response = isRecordingsUrl(url)
-          ? await handleRecordingsRequest(url)
-          : await handleLeaderboardRequest(url, method, body);
+        const response = await handleLeaderboardRequest(url, method, body);
         return new Response(JSON.stringify(response.body), {
           status: response.status,
           headers: { "Content-Type": "application/json" }
