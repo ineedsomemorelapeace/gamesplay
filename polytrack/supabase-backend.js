@@ -25,6 +25,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return [...new Set([raw, decoded].filter(Boolean))];
   }
   const id = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  // Stable browser identity lets Supabase keep one personal best per player and track.
+  const PLAYER_KEY = (() => {
+    const storageKey = "polytrack-supabase-player-key";
+    try {
+      let value = localStorage.getItem(storageKey);
+      if (!value) {
+        value = id();
+        localStorage.setItem(storageKey, value);
+      }
+      return value;
+    } catch {
+      return id();
+    }
+  })();
   const inviteCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)),
     n => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n % 32]).join("");
 
@@ -411,6 +425,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     const best = candidates[0];
     try {
       const { error } = await client.from("polytrack_times").insert({
+        player_key: PLAYER_KEY,
         track_slug: slugify(wanted), track_name: wanted.slice(0, 120),
         player_name: String(best.name || "Anonymous").slice(0, 40) || "Anonymous",
         time_ms: Math.round(best.frames * 1000 / 60), replay: best.replay,
@@ -549,6 +564,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const carColors = String(get("carColors") || "");
       const recording = get("recording");
       const { data, error } = await client.from("polytrack_times").insert({
+        player_key: PLAYER_KEY,
         track_slug: slugify(trackId),
         track_name: String(trackId).slice(0, 120),
         player_name: playerName,
@@ -599,6 +615,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const ms = Math.round(Number(timeMs));
       if (!name || !Number.isFinite(ms) || ms <= 0 || ms >= 86400000) throw new Error("Track name and a valid finish time are required.");
       const { data, error } = await client.from("polytrack_times").insert({
+        player_key: PLAYER_KEY,
         track_slug: slugify(name), track_name: name,
         player_name: String(playerName || "Anonymous").trim().slice(0, 40) || "Anonymous",
         time_ms: ms, replay, customization: customization && typeof customization === "object" ? customization : {},
