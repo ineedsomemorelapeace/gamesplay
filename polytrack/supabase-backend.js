@@ -4,6 +4,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
 (() => {
+  // Prevent duplicate Supabase hooks if this script is accidentally included more than once.
+  if (window.__polytrackSupabaseBackendLoaded) return;
+  window.__polytrackSupabaseBackendLoaded = true;
+
   const SUPABASE_URL = "https://dyomqhrsbyzcumxzvklw.supabase.co";
   const SUPABASE_KEY = "sb_publishable_0B53LkSMv6sGOH7adiPjgQ_s99Vubpb";
   const client = createClient(SUPABASE_URL, SUPABASE_KEY, {
