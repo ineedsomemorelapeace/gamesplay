@@ -508,16 +508,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       });
       const entries = (data || []).map(row => ({
         id: Number(row.id) || 0,
-        userId: "",
-        // PolyTrack 0.6 validates nickname, not name, when parsing leaderboard entries.
+        // Match the complete PolyTrack 0.6 leaderboard entry shape.
+        userId: "0000000000000000000000000000000000000000000000000000000000000000",
         nickname: String(row.player_name || "Anonymous"),
         name: String(row.player_name || "Anonymous"),
-        frames: Math.max(1, Math.round(Number(row.time_ms) * 60 / 1000)),
+        countryCode: null,
+        // PolyTrack's API calls this field frames, but its value is milliseconds.
+        frames: Math.max(1, Math.round(Number(row.time_ms) || 1)),
+        time: row.created_at || new Date(0).toISOString(),
         carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "")
           ? row.car_data.carColors : "ffffffffffffffffffffffff",
-        // PolyTrack 0.6.x requires carStyle to exist on every leaderboard entry.
-        // Older Supabase rows may not have saved customization data, so use null safely.
-        carStyle: row.car_data?.carStyle ?? null,
+        // Valid 16-byte default CarStyle (base64url): version/pattern/rims/exhaust + colors.
+        carStyle: typeof row.car_data?.carStyle === "string" && row.car_data.carStyle
+          ? row.car_data.carStyle : "AAAAAAAAAAAAAAAAAAAAAA",
         verifiedState: row.verification_status === "yes" ? 1 : 0,
         isSelf: false
       }));
