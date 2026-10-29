@@ -509,11 +509,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const entries = (data || []).map(row => ({
         id: Number(row.id) || 0,
         userId: "",
-        name: row.player_name || "Anonymous",
+        // PolyTrack 0.6 validates nickname, not name, when parsing leaderboard entries.
+        nickname: String(row.player_name || "Anonymous"),
+        name: String(row.player_name || "Anonymous"),
         frames: Math.max(1, Math.round(Number(row.time_ms) * 60 / 1000)),
         carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "")
           ? row.car_data.carColors : "ffffffffffffffffffffffff",
-        // Match the original API's complete leaderboard entry shape.
         verifiedState: row.verification_status === "yes" ? 1 : 0,
         isSelf: false
       }));
