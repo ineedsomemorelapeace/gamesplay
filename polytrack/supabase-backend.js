@@ -515,6 +515,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         frames: Math.max(1, Math.round(Number(row.time_ms) * 60 / 1000)),
         carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "")
           ? row.car_data.carColors : "ffffffffffffffffffffffff",
+        // PolyTrack 0.6.x requires carStyle to exist on every leaderboard entry.
+        // Older Supabase rows may not have saved customization data, so use null safely.
+        carStyle: row.car_data?.carStyle ?? null,
         verifiedState: row.verification_status === "yes" ? 1 : 0,
         isSelf: false
       }));
