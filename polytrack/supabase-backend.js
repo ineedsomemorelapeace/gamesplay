@@ -513,8 +513,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         nickname: String(row.player_name || "Anonymous"),
         name: String(row.player_name || "Anonymous"),
         countryCode: null,
-        // PolyTrack's API calls this field frames, but its value is milliseconds.
-        frames: Math.max(1, Math.round(Number(row.time_ms) || 1)),
+        // Supabase stores milliseconds; PolyTrack's leaderboard expects 60-fps frames.
+        frames: Math.max(1, Math.round((Number(row.time_ms) || 1) * 60 / 1000)),
         time: row.created_at || new Date(0).toISOString(),
         carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "")
           ? row.car_data.carColors : "ffffffffffffffffffffffff",
