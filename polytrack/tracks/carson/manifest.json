@@ -1,82 +1,35 @@
 {
   "tracks": [
-    {
-      "name": "100_CHECKPOINTS.track"
-    },
-    {
-      "name": "Carson_1.track"
-    },
-    {
-      "name": "Chat-GPT_Track.track"
-    },
-    {
-      "name": "Dexton’s_Impossible_Track.track"
-    },
-    {
-      "name": "Dexton’s_possible_track.track"
-    },
-    {
-      "name": "Frustrating.track"
-    },
-    {
-      "name": "Hard.track"
-    },
-    {
-      "name": "Hi_guys.track"
-    },
-    {
-      "name": "JP's_Track.track"
-    },
-    {
-      "name": "JP's_Track_2.0.track"
-    },
-    {
-      "name": "Jackson_Bronze.track"
-    },
-    {
-      "name": "Mega_Jump.track"
-    },
-    {
-      "name": "Neeeeeerrrrrrrrr.track"
-    },
-    {
-      "name": "OOPS😅😅😅😅😅.track"
-    },
-    {
-      "name": "Oglaa_boogaloo.track"
-    },
-    {
-      "name": "Owen.track"
-    },
-    {
-      "name": "Paylo_is_a_clone.track"
-    },
-    {
-      "name": "Phase_Through_The_Mountains.track"
-    },
-    {
-      "name": "Ragebait_😈💀.track"
-    },
-    {
-      "name": "Ronan_and_Drake_forever_❤️.track"
-    },
-    {
-      "name": "Ronan_loves_Drake.track"
-    },
-    {
-      "name": "Ronan_loves_hadley.track"
-    },
-    {
-      "name": "Tedih.track"
-    },
-    {
-      "name": "The_Thermal_Reaction.track"
-    },
-    {
-      "name": "Twins_😭.track"
-    },
-    {
-      "name": "iPhone_VS_Nokia.track"
-    }
+    { "name": "100_CHECKPOINTS.track" },
+    { "name": "Carson_1.track" },
+    { "name": "Chat-GPT_Track.track" },
+    { "name": "Dexton’s_Impossible_Track.track" },
+    { "name": "Dexton’s_possible_track.track" },
+    { "name": "Easy_right.track" },
+    { "name": "Frustrating.track" },
+    { "name": "Hard.track" },
+    { "name": "Hi_guys.track" },
+    { "name": "JP's_Track.track" },
+    { "name": "JP's_Track_2.0.track" },
+    { "name": "Jackson_Bronze.track" },
+    { "name": "Mega_Jump.track" },
+    { "name": "Neeeeeerrrrrrrrr.track" },
+    { "name": "OOPS😅😅😅😅😅.track" },
+    { "name": "Oglaa_boogaloo.track" },
+    { "name": "Owen.track" },
+    { "name": "Owen_dont_goon.track" },
+    { "name": "Paylo_is_a_clone.track" },
+    { "name": "Phase_Through_The_Mountains.track" },
+    { "name": "Ragebait_😈💀.track" },
+    { "name": "Ronan_and_Drake_forever_❤️.track" },
+    { "name": "Ronan_loves_Drake.track" },
+    { "name": "Ronan_loves_hadley.track" },
+    { "name": "Tedih.track" },
+    { "name": "The_Thermal_Reaction.track" },
+    { "name": "Track_1_-_Campaign_1.track" },
+    { "name": "Twins_😭.track" },
+    { "name": "WAIT_FOR_IT,_SUPER_JUMP.track" },
+    { "name": "Will_I_am.track" },
+    { "name": "iPhone_VS_Nokia.track" }
   ]
 }
