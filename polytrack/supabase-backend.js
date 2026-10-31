@@ -635,7 +635,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         if (!body && typeof Request !== "undefined" && input instanceof Request && method.toUpperCase() === "POST") {
           body = await input.clone().text();
         }
-        const response = await handleLeaderboardRequest(url, method, body);
+        const response = await handleCompatRequest(url, method, body);
         return new Response(JSON.stringify(response.body), {
           status: response.status,
           headers: { "Content-Type": "application/json" }
