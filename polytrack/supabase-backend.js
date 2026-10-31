@@ -262,6 +262,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     open(method, url, ...rest) {
       this.__polyTrackIceRequest = String(url).includes(BACKEND_HOST) && String(url).includes("/iceServers");
       this.__polyTrackLeaderboardRequest = isLeaderboardUrl(url);
+      this.__polyTrackRecordingsRequest = isRecordingsUrl(url);
+      this.__polyTrackUserRequest = isUserUrl(url);
       this.__polyTrackMethod = method;
       this.__polyTrackUrl = url;
       // Always run native open(): PolyTrack's XHR helpers may inspect readyState or headers.
@@ -279,7 +281,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       return super.getAllResponseHeaders();
     }
     send(body) {
-      if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest) return super.send(body);
+      if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest && !this.__polyTrackRecordingsRequest && !this.__polyTrackUserRequest) return super.send(body);
       const xhr = this;
       if (this.__polyTrackLeaderboardRequest) {
         Promise.resolve().then(async () => {
@@ -302,7 +304,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
             xhr.dispatchEvent(new Event("load"));
             xhr.dispatchEvent(new Event("loadend"));
           } catch (error) {
-            console.error("PolyTrack Supabase leaderboard request failed:", error);
+            console.error("PolyTrack Supabase API request failed:", error);
 
             xhr.__polyTrackInterceptedResponseHeaders = { "content-type": "application/json; charset=utf-8" };
             for (const [key, value] of Object.entries({
@@ -575,7 +577,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         time_ms: timeMs,
         replay: typeof recording === "string" && recording ? recording : null,
         customization: {},
-        car_data: { carColors: /^[a-f0-9]{24}$/i.test(carColors) ? carColors : "ffffffffffffffffffffffff" },
+        car_data: { carColors: /^[a-f0-9]{24}$/i.test(carColors) ? carColors : "ffffffffffffffffffffffff", carStyle: String(get("carStyle") || "") },
         verification_status: "waiting"
       }).select("id").single();
       if (error) throw error;
@@ -585,10 +587,48 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return { status: 405, body: { error: "Method not supported" } };
   }
 
+  function isRecordingsUrl(value) {
+    try { return new URL(String(value), location.href).pathname.replace(/\/$/, "").endsWith("/recordings"); }
+    catch { return false; }
+  }
+  function isUserUrl(value) {
+    try { return new URL(String(value), location.href).pathname.replace(/\/$/, "").endsWith("/user"); }
+    catch { return false; }
+  }
+  async function handleRecordingsRequest(url) {
+    const params = new URL(String(url), location.href).searchParams;
+    const ids = String(params.get("ids") || params.get("recordingIds") || "")
+      .split(",").map(value => Number(value.trim())).filter(value => Number.isSafeInteger(value) && value > 0);
+    if (!ids.length) return { status: 200, body: [] };
+    const { data, error } = await client.from("polytrack_times")
+      .select("id,time_ms,replay,car_data,verification_status").in("id", ids);
+    if (error) throw error;
+    const byId = new Map((data || []).map(row => [Number(row.id), row]));
+    return { status: 200, body: ids.map(id => {
+      const row = byId.get(id);
+      if (!row || typeof row.replay !== "string" || !row.replay) return null;
+      return {
+        recording: row.replay,
+        verifiedState: row.verification_status === "yes" ? 1 : row.verification_status === "no" ? 2 : 0,
+        frames: Math.max(1, Math.round((Number(row.time_ms) || 1) * 60 / 1000)),
+        carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "") ? row.car_data.carColors : "ffffffffffffffffffffffff"
+      };
+    }) };
+  }
+  async function handleUserRequest(method) {
+    return { status: 200, body: null, raw: String(method).toUpperCase() === "POST" ? "" : "null" };
+  }
+  async function handleCompatRequest(url, method, bodyText = "") {
+    if (isLeaderboardUrl(url)) return handleLeaderboardRequest(url, method, bodyText);
+    if (isRecordingsUrl(url)) return handleRecordingsRequest(url);
+    if (isUserUrl(url)) return handleUserRequest(method);
+    return { status: 404, body: { error: "Unknown endpoint" } };
+  }
+
   const NativeFetch = window.fetch.bind(window);
   window.fetch = async function(input, init = {}) {
     const url = typeof input === "string" || input instanceof URL ? String(input) : input?.url;
-    if (url && isLeaderboardUrl(url)) {
+    if (url && (isLeaderboardUrl(url) || isRecordingsUrl(url) || isUserUrl(url))) {
       try {
         const method = init.method || input?.method || "GET";
         let body = bodyToText(init.body);
