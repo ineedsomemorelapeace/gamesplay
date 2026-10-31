@@ -283,11 +283,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     send(body) {
       if (!this.__polyTrackIceRequest && !this.__polyTrackLeaderboardRequest && !this.__polyTrackRecordingsRequest && !this.__polyTrackUserRequest) return super.send(body);
       const xhr = this;
-      if (this.__polyTrackLeaderboardRequest) {
+      if (this.__polyTrackLeaderboardRequest || this.__polyTrackRecordingsRequest || this.__polyTrackUserRequest) {
         Promise.resolve().then(async () => {
           try {
-            const result = await handleLeaderboardRequest(this.__polyTrackUrl, this.__polyTrackMethod, bodyToText(body));
-            const text = JSON.stringify(result.body);
+            const result = await handleCompatRequest(this.__polyTrackUrl, this.__polyTrackMethod, bodyToText(body));
+            const text = result.raw !== undefined ? result.raw : JSON.stringify(result.body);
             xhr.__polyTrackInterceptedResponseHeaders = {
               "content-type": "application/json; charset=utf-8",
               "content-length": String(new TextEncoder().encode(text).length)
