@@ -611,7 +611,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         recording: row.replay,
         verifiedState: row.verification_status === "yes" ? 1 : row.verification_status === "no" ? 2 : 0,
         frames: Math.max(1, Math.round((Number(row.time_ms) || 1) * 60 / 1000)),
-        carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "") ? row.car_data.carColors : "ffffffffffffffffffffffff"
+        carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "") ? row.car_data.carColors : "ffffffffffffffffffffffff",
+        carStyle: typeof row.car_data?.carStyle === "string" && row.car_data.carStyle
+          ? row.car_data.carStyle : "AAAAAAAAAAAAAAAAAAAAAA"
       };
     }) };
   }
