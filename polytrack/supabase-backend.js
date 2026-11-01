@@ -588,6 +588,19 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
       // When a named player returns and submits any time, backfill their older
       // records that predate carStyle storage. Never match or modify Anonymous rows.
+      const selectedCountry = normalizeCountryCode(get("countryCode") || get("country_code")) ||
+        (() => { try { return normalizeCountryCode(localStorage.getItem("polytrack-country-code")); } catch { return null; } })();
+      if (playerName.toLowerCase() !== "anonymous" && selectedCountry) {
+        try {
+          const { error: countryUpdateError } = await client.from("polytrack_times")
+            .update({ country_code: selectedCountry })
+            .eq("player_name", playerName)
+            .is("country_code", null);
+          if (countryUpdateError) throw countryUpdateError;
+        } catch (countryUpdateError) {
+          console.warn("Could not update older country codes for", playerName, countryUpdateError);
+        }
+      }
       if (playerName.toLowerCase() !== "anonymous" && savedCarStyle) {
         try {
           const { data: oldRows, error: readError } = await client.from("polytrack_times")
