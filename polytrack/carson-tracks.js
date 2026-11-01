@@ -346,7 +346,7 @@
             // .track element, never as a second grid item beside/below the tile.
             const card = newNodes.flatMap(node => [
               ...(node.matches?.(".track") ? [node] : []),
-              ...node.querySelectorAll?.(".track") || []
+              ...(node.querySelectorAll ? [...node.querySelectorAll(".track")] : [])
             ]).find(node => node.querySelector("canvas,svg,img") || node.children.length > 0)
               || newNodes.find(node => node.querySelector(".track"))?.querySelector(".track")
               || newNodes[0];
