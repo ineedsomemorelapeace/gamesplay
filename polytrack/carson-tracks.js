@@ -31,6 +31,13 @@
       .carson-native-preview { display:block; width:100%; height:clamp(150px,17vw,235px); padding:12px; border:0; background:#142653; cursor:pointer; }
       .carson-native-overhead { display:flex; width:100%; height:100%; align-items:center; justify-content:center; }
       .carson-native-overhead svg { width:100%; height:100%; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
+      .carson-rating-row { display:flex; align-items:center; justify-content:center; gap:26px; min-height:58px; padding:7px 10px; background:#222f60; border-top:1px solid rgba(255,255,255,.28); box-sizing:border-box; }
+      .carson-rating-choice { display:inline-flex; align-items:center; justify-content:center; gap:9px; min-width:88px; min-height:42px; padding:4px 10px; border:0; background:transparent; color:#fff; font:inherit; font-size:clamp(16px,1.6vw,23px); font-weight:700; cursor:pointer; }
+      .carson-rating-choice img { width:34px; height:34px; object-fit:contain; }
+      .carson-rating-choice:disabled { opacity:.55; cursor:wait; }
+      .carson-rating-choice[aria-pressed="true"] { background:rgba(255,255,255,.12); border-radius:8px; }
+      .carson-rating-count { min-width:1ch; color:#fff; }
+      .carson-rating-error { color:#ffd36a; text-align:center; font-size:12px; padding:3px 8px 7px; background:#222f60; }
       .carson-native-record { min-height:35px; padding:7px 4px; display:flex; align-items:center; justify-content:center; text-align:center; background:#222f60; color:#fff; font-size:clamp(13px,1.35vw,19px); font-weight:700; }
       @media(max-width:900px) { .carson-track-list { grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 18px; } }
       @media(max-width:700px) { .carson-track-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .carson-native-preview { height:155px; } }
@@ -202,6 +209,80 @@
       return preloadPromise;
     }
 
+
+    async function attachRatingControls(card, trackName) {
+      if (!card || card.querySelector(":scope > .carson-rating-row")) return;
+      const backend = window.polytrackBackend;
+      const row = document.createElement("div");
+      row.className = "carson-rating-row";
+      const choices = [
+        { vote: 1, off: "ratinggood.svg", on: "ratinggoodchecked.svg", alt: "Thumbs up" },
+        { vote: -1, off: "ratingbad.svg", on: "ratingbadchecked.svg", alt: "Thumbs down" }
+      ];
+      const buttons = new Map();
+      for (const choice of choices) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "carson-rating-choice";
+        button.setAttribute("aria-label", choice.alt);
+        button.setAttribute("aria-pressed", "false");
+        const image = document.createElement("img");
+        image.src = new URL(choice.off, SITE_BASE).href;
+        image.alt = "";
+        const count = document.createElement("span");
+        count.className = "carson-rating-count";
+        count.textContent = "0";
+        button.append(image, count);
+        row.append(button);
+        buttons.set(choice.vote, { button, image, count, choice });
+      }
+      const error = document.createElement("div");
+      error.className = "carson-rating-error";
+      error.hidden = true;
+      card.append(row, error);
+
+      const slug = (backend?.slugify || (value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "")))(trackName);
+      let selected = null;
+      let busy = false;
+      const draw = result => {
+        selected = result.myVote ?? null;
+        for (const [vote, item] of buttons) {
+          item.image.src = new URL(selected === vote ? item.choice.on : item.choice.off, SITE_BASE).href;
+          item.button.setAttribute("aria-pressed", selected === vote ? "true" : "false");
+          item.count.textContent = String(vote === 1 ? result.up : result.down);
+          item.button.disabled = busy;
+        }
+      };
+      try {
+        if (!backend?.getCarsonTrackRating) throw new Error("Ratings backend is not ready");
+        draw(await backend.getCarsonTrackRating(trackName));
+      } catch (e) {
+        error.textContent = "Ratings unavailable";
+        error.hidden = false;
+        console.warn("Could not load Carson track rating:", trackName, e);
+      }
+      for (const [vote, item] of buttons) {
+        item.button.addEventListener("click", async () => {
+          if (busy) return;
+          busy = true;
+          draw({ up: Number(buttons.get(1).count.textContent) || 0, down: Number(buttons.get(-1).count.textContent) || 0, myVote: selected });
+          error.hidden = true;
+          try {
+            const next = selected === vote ? null : vote;
+            const result = await backend.setCarsonTrackRating(trackName, next);
+            draw(result);
+          } catch (e) {
+            error.textContent = "Could not save vote. Tap to retry.";
+            error.hidden = false;
+            console.error("Could not save Carson track rating:", trackName, e);
+          } finally {
+            busy = false;
+            for (const value of buttons.values()) value.button.disabled = false;
+          }
+        });
+      }
+    }
+
     async function loadTracks() {
       if (rendered) return;
       list.innerHTML = '<div class="carson-track-empty">Loading Carson tracks…</div>';
@@ -259,6 +340,8 @@
               list
             );
             if (list.childElementCount <= before) throw new Error("Native track card was not created");
+            const card = list.children[before];
+            if (card) attachRatingControls(card, metadata.name);
             added++;
           } catch (error) {
             console.error("Could not parse/render Carson track:", item.file.name, error);
