@@ -534,6 +534,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         nickname: String(row.player_name || "Anonymous"),
         name: String(row.player_name || "Anonymous"),
         countryCode: /^[A-Z]{2}$/.test(String(row.country_code || "").toUpperCase()) ? String(row.country_code).toUpperCase() : null,
+        country: /^[A-Z]{2}$/.test(String(row.country_code || "").toUpperCase()) ? String(row.country_code).toUpperCase() : null,
         // Supabase stores milliseconds; PolyTrack's leaderboard expects 60-fps frames.
         frames: Math.max(1, Math.round((Number(row.time_ms) || 1) * 60 / 1000)),
         time: row.created_at || new Date(0).toISOString(),
