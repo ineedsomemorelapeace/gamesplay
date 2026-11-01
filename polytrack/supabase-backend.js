@@ -724,7 +724,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   };
 
   const backend = {
-    client, slugify,
+    client, slugify, getCarsonTrackRating, setCarsonTrackRating,
     async submitTime({ trackName, timeMs, playerName = "Anonymous", replay = null, customization = {}, carData = {} }) {
       const name = String(trackName || "").trim().slice(0, 120);
       const ms = Math.round(Number(timeMs));
@@ -754,6 +754,39 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       return data || [];
     }
   };
+  async function getCarsonTrackRating(trackName) {
+    const trackSlug = slugify(trackName);
+    const { data, error } = await client.from("carson_track_ratings")
+      .select("player_key,vote").eq("track_slug", trackSlug).limit(10000);
+    if (error) throw error;
+    const rows = data || [];
+    return {
+      up: rows.filter(row => Number(row.vote) === 1).length,
+      down: rows.filter(row => Number(row.vote) === -1).length,
+      myVote: rows.find(row => row.player_key === PLAYER_KEY)?.vote ?? null
+    };
+  }
+  async function setCarsonTrackRating(trackName, vote) {
+    const trackNameSafe = String(trackName || "").trim().slice(0, 120);
+    if (!trackNameSafe) throw new Error("A Carson track name is required");
+    const trackSlug = slugify(trackNameSafe);
+    if (vote === null) {
+      const { error } = await client.from("carson_track_ratings")
+        .delete().eq("track_slug", trackSlug).eq("player_key", PLAYER_KEY);
+      if (error) throw error;
+    } else {
+      const normalizedVote = Number(vote);
+      if (normalizedVote !== 1 && normalizedVote !== -1) throw new Error("Vote must be thumbs up or thumbs down");
+      const { error } = await client.from("carson_track_ratings").upsert({
+        track_slug: trackSlug, track_name: trackNameSafe, player_key: PLAYER_KEY,
+        vote: normalizedVote, updated_at: new Date().toISOString()
+      }, { onConflict: "track_slug,player_key" });
+      if (error) throw error;
+    }
+    leaderboardReadCache.clear();
+    return getCarsonTrackRating(trackNameSafe);
+  }
+
   window.polytrackBackend = backend;
   window.dispatchEvent(new CustomEvent("polytrack:backend-ready", { detail: { backend } }));
   window.addEventListener("polytrack:run-finished", async event => {
