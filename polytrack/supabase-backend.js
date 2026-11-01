@@ -126,7 +126,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       this.deliver({
         version: "0.6.0", type: "createInvite", inviteCode: this.code,
         key: typeof this.hostKey === "string" ? this.hostKey : "",
-        timeoutMilliseconds: null, censoredNickname: null
+        timeoutMilliseconds: null,
+        // PolyTrack expects the host nickname to be initialized before it sends
+        // the host player state to a newly connected peer. The bridge has no
+        // server-side censor service, so echo the host profile nickname.
+        censoredNickname: typeof message.nickname === "string" && message.nickname.trim()
+          ? message.nickname.trim().slice(0, 40) : "Player"
       });
     }
     async setupJoin(message) {
@@ -533,8 +538,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         userId: "0000000000000000000000000000000000000000000000000000000000000000",
         nickname: String(row.player_name || "Anonymous"),
         name: String(row.player_name || "Anonymous"),
-        countryCode: /^[A-Z]{2}$/.test(String(row.country_code || "").toUpperCase()) ? String(row.country_code).toUpperCase() : null,
-        country: /^[A-Z]{2}$/.test(String(row.country_code || "").toUpperCase()) ? String(row.country_code).toUpperCase() : null,
+        countryCode: /^[A-Z]{2}$/.test(String(row.country_code || "").toUpperCase()) ? String(row.country_code).toLowerCase() : null,
+        country: /^[A-Z]{2}$/.test(String(row.country_code || "").toUpperCase()) ? String(row.country_code).toLowerCase() : null,
         // Supabase stores milliseconds; PolyTrack's leaderboard expects 60-fps frames.
         frames: Math.max(1, Math.round((Number(row.time_ms) || 1) * 60 / 1000)),
         time: row.created_at || new Date(0).toISOString(),
