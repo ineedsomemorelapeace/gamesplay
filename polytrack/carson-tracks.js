@@ -31,14 +31,13 @@
       .carson-native-preview { display:block; width:100%; height:clamp(150px,17vw,235px); padding:12px; border:0; background:#142653; cursor:pointer; }
       .carson-native-overhead { display:flex; width:100%; height:100%; align-items:center; justify-content:center; }
       .carson-native-overhead svg { width:100%; height:100%; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
-      /* Carson ratings are the attached footer of each native track tile. */
-      .carson-track-list .track { display:flex!important; flex-direction:column!important; align-items:stretch!important; gap:0!important; min-width:0; }
-      .carson-rating-row { display:flex; align-items:center; justify-content:space-evenly; gap:10px; flex:0 0 44px; width:100%; min-height:44px; margin:0!important; padding:2px 8px; box-sizing:border-box; background:#222f60; border-top:1px solid rgba(190,210,255,.38); clip-path:polygon(4% 0,100% 0,96% 100%,0 100%); }
-      .carson-rating-choice { display:inline-flex; align-items:center; justify-content:center; gap:6px; flex:0 1 42%; min-width:0; min-height:38px; padding:2px 5px; border:0; background:transparent; color:#fff; font-family:inherit; font-size:clamp(14px,1.25vw,18px); font-weight:700; line-height:1; cursor:pointer; }
-      .carson-rating-choice img { display:block; flex:0 0 25px; width:25px; height:25px; object-fit:contain; }
+      /* Keep the original native card layout; ratings are a compact attached footer. */
+      .carson-rating-row { display:flex; align-items:center; justify-content:space-evenly; gap:12px; width:100%; min-height:42px; margin:-1px 0 0!important; padding:3px 8px; box-sizing:border-box; background:#222f60; border-top:1px solid rgba(190,210,255,.38); }
+      .carson-rating-choice { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-width:72px; min-height:36px; padding:2px 8px; border:0; background:transparent; color:#fff; font-family:inherit; font-size:clamp(14px,1.35vw,19px); font-weight:700; line-height:1; cursor:pointer; }
+      .carson-rating-choice img { display:block; width:27px; height:27px; object-fit:contain; }
       .carson-rating-choice:disabled { opacity:.55; cursor:wait; }
       .carson-rating-choice[aria-pressed="true"] { background:rgba(255,255,255,.12); border-radius:5px; }
-      .carson-rating-count { min-width:1ch; color:#fff; font-size:clamp(14px,1.25vw,18px); line-height:1; }
+      .carson-rating-count { min-width:1ch; color:#fff; font-size:inherit; line-height:1; }
       .carson-rating-error { color:#ffd36a; text-align:center; font-size:11px; line-height:1.2; padding:3px 6px; background:#222f60; }
       .carson-native-record { min-height:35px; padding:7px 4px; display:flex; align-items:center; justify-content:center; text-align:center; background:#222f60; color:#fff; font-size:clamp(13px,1.35vw,19px); font-weight:700; }
       @media(max-width:900px) { .carson-track-list { grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 18px; } }
@@ -218,8 +217,8 @@
       const row = document.createElement("div");
       row.className = "carson-rating-row";
       const choices = [
-        { vote: 1, off: "ratinggood.svg", on: "ratinggoodchecked.svg", alt: "Thumbs up" },
-        { vote: -1, off: "ratingbad.svg", on: "ratingbadchecked.svg", alt: "Thumbs down" }
+        { vote: 1, off: "ratinggood.png", on: "ratinggoodchecked.png", alt: "Thumbs up" },
+        { vote: -1, off: "ratingbad.png", on: "ratingbadchecked.png", alt: "Thumbs down" }
       ];
       const buttons = new Map();
       for (const choice of choices) {
