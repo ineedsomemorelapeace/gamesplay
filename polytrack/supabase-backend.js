@@ -567,7 +567,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
           !Number.isSafeInteger(timeMs) || timeMs <= 0 || timeMs >= 86400000) {
         return { status: 400, body: { error: "Invalid leaderboard submission" } };
       }
-      const carColors = String(get("carColors") || "");
+      const rawCarColors = String(get("carColors") || "");
+      const savedCarColors = /^[a-f0-9]{24}$/i.test(rawCarColors) ? rawCarColors : "ffffffffffffffffffffffff";
+      const savedCarStyle = String(get("carStyle") || "").trim();
       const recording = get("recording");
       const { data, error } = await client.from("polytrack_times").insert({
         player_key: PLAYER_KEY,
@@ -577,10 +579,40 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         time_ms: timeMs,
         replay: typeof recording === "string" && recording ? recording : null,
         customization: {},
-        car_data: { carColors: /^[a-f0-9]{24}$/i.test(carColors) ? carColors : "ffffffffffffffffffffffff", carStyle: String(get("carStyle") || "") },
+        // Always save the submitting player's current appearance, including Anonymous.
+        car_data: { carColors: savedCarColors, carStyle: savedCarStyle || "AAAAAAAAAAAAAAAAAAAAAA" },
         verification_status: "waiting"
       }).select("id").single();
       if (error) throw error;
+
+      // When a named player returns and submits any time, backfill their older
+      // records that predate carStyle storage. Never match or modify Anonymous rows.
+      if (playerName.toLowerCase() !== "anonymous" && savedCarStyle) {
+        try {
+          const { data: oldRows, error: readError } = await client.from("polytrack_times")
+            .select("id,car_data")
+            .eq("player_name", playerName)
+            .neq("id", Number(data.id))
+            .limit(5000);
+          if (readError) throw readError;
+          const idsToUpdate = (oldRows || [])
+            .filter(row => !row.car_data?.carStyle)
+            .map(row => Number(row.id))
+            .filter(Number.isSafeInteger);
+          for (let i = 0; i < idsToUpdate.length; i += 100) {
+            const batch = idsToUpdate.slice(i, i + 100);
+            const { error: updateError } = await client.from("polytrack_times")
+              .update({ car_data: { carColors: savedCarColors, carStyle: savedCarStyle } })
+              .in("id", batch)
+              .eq("player_name", playerName);
+            if (updateError) throw updateError;
+          }
+          if (idsToUpdate.length) console.info("Updated old PolyTrack car appearances:", playerName, idsToUpdate.length);
+        } catch (backfillError) {
+          // The new record is already saved; a failed backfill must not discard it.
+          console.warn("Could not update older car appearances for", playerName, backfillError);
+        }
+      }
       return { status: 200, body: Number(data.id) || null };
     }
 
