@@ -31,12 +31,12 @@
       .carson-native-preview { display:block; width:100%; height:clamp(150px,17vw,235px); padding:12px; border:0; background:#142653; cursor:pointer; }
       .carson-native-overhead { display:flex; width:100%; height:100%; align-items:center; justify-content:center; }
       .carson-native-overhead svg { width:100%; height:100%; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
-      /* Keep the original native card layout; ratings are a compact attached footer. */
-      .carson-rating-row { display:flex; align-items:center; justify-content:space-evenly; gap:12px; width:100%; min-height:42px; margin:-1px 0 0!important; padding:3px 8px; box-sizing:border-box; background:#222f60; border-top:1px solid rgba(190,210,255,.38); }
-      .carson-rating-choice { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-width:72px; min-height:36px; padding:2px 8px; border:0; background:transparent; color:#fff; font-family:inherit; font-size:clamp(14px,1.35vw,19px); font-weight:700; line-height:1; cursor:pointer; }
-      .carson-rating-choice img { display:block; width:27px; height:27px; object-fit:contain; }
+      /* Ratings are a footer inside the existing native Carson track tile. */
+      .carson-rating-row { display:flex; align-items:center; justify-content:space-around; gap:8px; width:100%; min-height:44px; margin:0; padding:4px 8px; box-sizing:border-box; background:#222f60; border-top:1px solid rgba(190,210,255,.35); }
+      .carson-rating-choice { display:flex; align-items:center; justify-content:center; gap:7px; flex:1 1 50%; min-width:0; height:36px; padding:2px 8px; border:0; border-radius:3px; background:transparent; color:#fff; font:inherit; font-size:clamp(14px,1.35vw,19px); font-weight:700; line-height:1; cursor:pointer; }
+      .carson-rating-choice img { display:block; width:23px; height:23px; object-fit:contain; }
       .carson-rating-choice:disabled { opacity:.55; cursor:wait; }
-      .carson-rating-choice[aria-pressed="true"] { background:rgba(255,255,255,.12); border-radius:5px; }
+      .carson-rating-choice[aria-pressed="true"] { background:rgba(255,255,255,.16); box-shadow:inset 0 0 0 1px rgba(255,255,255,.24); }
       .carson-rating-count { min-width:1ch; color:#fff; font-size:inherit; line-height:1; }
       .carson-rating-error { color:#ffd36a; text-align:center; font-size:11px; line-height:1.2; padding:3px 6px; background:#222f60; }
       .carson-native-record { min-height:35px; padding:7px 4px; display:flex; align-items:center; justify-content:center; text-align:center; background:#222f60; color:#fff; font-size:clamp(13px,1.35vw,19px); font-weight:700; }
@@ -217,8 +217,8 @@
       const row = document.createElement("div");
       row.className = "carson-rating-row";
       const choices = [
-        { vote: 1, off: "ratinggood.png", on: "ratinggoodchecked.png", alt: "Thumbs up" },
-        { vote: -1, off: "ratingbad.png", on: "ratingbadchecked.png", alt: "Thumbs down" }
+        { vote: 1, off: "images/apply.svg", on: "images/apply.svg", alt: "Thumbs up" },
+        { vote: -1, off: "images/cancel.svg", on: "images/cancel.svg", alt: "Thumbs down" }
       ];
       const buttons = new Map();
       for (const choice of choices) {
@@ -341,8 +341,17 @@
               list
             );
             if (list.childElementCount <= before) throw new Error("Native track card was not created");
-            const card = list.children[before];
-            if (card) attachRatingControls(card, metadata.name);
+            const newNodes = [...list.children].slice(before);
+            // The native renderer may wrap the visible tile. Attach to the actual
+            // .track element, never as a second grid item beside/below the tile.
+            const card = newNodes.flatMap(node => [
+              ...(node.matches?.(".track") ? [node] : []),
+              ...node.querySelectorAll?.(".track") || []
+            ]).find(node => node.querySelector("canvas,svg,img") || node.children.length > 0)
+              || newNodes.find(node => node.querySelector(".track"))?.querySelector(".track")
+              || newNodes[0];
+            if (!card) throw new Error("Could not locate rendered Carson track tile");
+            attachRatingControls(card, metadata.name);
             added++;
           } catch (error) {
             console.error("Could not parse/render Carson track:", item.file.name, error);
