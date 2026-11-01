@@ -495,7 +495,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       const amount = Math.max(1, Math.min(100, Number.parseInt(params.get("amount") || "10", 10) || 10));
       const cacheKey = JSON.stringify([slugCandidates, rawCandidates, skip, amount]);
       const { data, total } = await cachedLeaderboardRead(cacheKey, async () => {
-        const selectColumns = "id,track_slug,track_name,player_name,time_ms,car_data,verification_status,created_at";
+        const selectColumns = "id,track_slug,track_name,player_name,time_ms,car_data,country_code,verification_status,created_at";
         const visibleStatuses = ["waiting", "yes"];
         // Hash-based PolyTrack IDs are identical before and after slugification.
         // Use a simple indexed IN query for that common case rather than a redundant OR.
@@ -533,7 +533,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         userId: "0000000000000000000000000000000000000000000000000000000000000000",
         nickname: String(row.player_name || "Anonymous"),
         name: String(row.player_name || "Anonymous"),
-        countryCode: null,
+        countryCode: /^[A-Z]{2}$/.test(String(row.country_code || "").toUpperCase()) ? String(row.country_code).toUpperCase() : null,
         // Supabase stores milliseconds; PolyTrack's leaderboard expects 60-fps frames.
         frames: Math.max(1, Math.round((Number(row.time_ms) || 1) * 60 / 1000)),
         time: row.created_at || new Date(0).toISOString(),
@@ -581,6 +581,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         customization: {},
         // Always save the submitting player's current appearance, including Anonymous.
         car_data: { carColors: savedCarColors, carStyle: savedCarStyle || "AAAAAAAAAAAAAAAAAAAAAA" },
+        country_code: normalizeCountryCode(get("countryCode") || get("country_code")) || (() => { try { return localStorage.getItem("polytrack-country-code") || null; } catch { return null; } })(),
         verification_status: "waiting"
       }).select("id").single();
       if (error) throw error;
@@ -649,13 +650,45 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       };
     }) };
   }
-  async function handleUserRequest(method) {
-    return { status: 200, body: null, raw: String(method).toUpperCase() === "POST" ? "" : "null" };
+  function normalizeCountryCode(value) {
+    const code = String(value || "").trim().toUpperCase();
+    return /^[A-Z]{2}$/.test(code) ? code : null;
+  }
+  function findCountryCode(value, depth = 0) {
+    if (!value || typeof value !== "object" || depth > 3) return null;
+    for (const key of ["countryCode", "country_code", "country"]) {
+      const found = normalizeCountryCode(value[key]);
+      if (found) return found;
+    }
+    for (const nested of Object.values(value)) {
+      if (nested && typeof nested === "object") {
+        const found = findCountryCode(nested, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+  async function handleUserRequest(method, bodyText = "") {
+    const methodUpper = String(method).toUpperCase();
+    if (methodUpper === "POST") {
+      let payload = null;
+      try { payload = JSON.parse(bodyText); } catch {
+        try { payload = Object.fromEntries(new URLSearchParams(bodyText)); } catch {}
+      }
+      const countryCode = findCountryCode(payload);
+      if (countryCode) {
+        try { localStorage.setItem("polytrack-country-code", countryCode); } catch {}
+      }
+      return { status: 200, body: null, raw: "" };
+    }
+    let countryCode = null;
+    try { countryCode = normalizeCountryCode(localStorage.getItem("polytrack-country-code")); } catch {}
+    return { status: 200, body: countryCode ? { countryCode } : null, raw: countryCode ? JSON.stringify({ countryCode }) : "null" };
   }
   async function handleCompatRequest(url, method, bodyText = "") {
     if (isLeaderboardUrl(url)) return handleLeaderboardRequest(url, method, bodyText);
     if (isRecordingsUrl(url)) return handleRecordingsRequest(url);
-    if (isUserUrl(url)) return handleUserRequest(method);
+    if (isUserUrl(url)) return handleUserRequest(method, bodyText);
     return { status: 404, body: { error: "Unknown endpoint" } };
   }
 
