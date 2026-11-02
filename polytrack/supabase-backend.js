@@ -724,7 +724,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   };
 
   const backend = {
-    client, slugify, getCarsonTrackRating, setCarsonTrackRating,
+    client, slugify, getCarsonTrackRating, getCarsonTrackScores, setCarsonTrackRating,
     async submitTime({ trackName, timeMs, playerName = "Anonymous", replay = null, customization = {}, carData = {} }) {
       const name = String(trackName || "").trim().slice(0, 120);
       const ms = Math.round(Number(timeMs));
@@ -754,6 +754,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       return data || [];
     }
   };
+  async function getCarsonTrackScores(trackNames) {
+    const slugs = [...new Set((trackNames || []).map(name => slugify(name)).filter(Boolean))];
+    const scores = new Map(slugs.map(slug => [slug, 0]));
+    if (!slugs.length) return scores;
+    const { data, error } = await client.from("carson_track_ratings")
+      .select("track_slug,vote").in("track_slug", slugs).limit(10000);
+    if (error) throw error;
+    for (const row of data || []) {
+      const slug = String(row.track_slug || "");
+      if (scores.has(slug)) scores.set(slug, scores.get(slug) + (Number(row.vote) === 1 ? 1 : Number(row.vote) === -1 ? -1 : 0));
+    }
+    return scores;
+  }
+
   async function getCarsonTrackRating(trackName) {
     const trackSlug = slugify(trackName);
     const { data, error } = await client.from("carson_track_ratings")
