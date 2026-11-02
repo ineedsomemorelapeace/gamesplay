@@ -186,6 +186,13 @@
         const unique = new Map();
         for (const file of files) unique.set(file.name, file);
         files = [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
+        const names = files.map(file => file.name.slice(0, -6).replace(/_/g, " "));
+        const scoresPromise = window.polytrackBackend?.getCarsonTrackScores
+          ? window.polytrackBackend.getCarsonTrackScores(names).catch(error => {
+              console.warn("Could not preload Carson ratings:", error);
+              return new Map();
+            })
+          : Promise.resolve(new Map());
         const results = await Promise.all(files.map(async file => {
           try {
             const response = await fetchWithRetry(file.url, {}, 2, 9000);
@@ -198,10 +205,12 @@
             return { ok: false, error: file.name + ": " + (error?.message || "fetch failed") };
           }
         }));
+        const scores = await scoresPromise;
         return {
           tracks: results.filter(result => result.ok).map(result => result.value),
           failures: results.filter(result => !result.ok).map(result => result.error),
-          fileCount: files.length
+          fileCount: files.length,
+          scores
         };
       })().catch(error => {
         preloadPromise = null;
@@ -211,7 +220,7 @@
     }
 
 
-    async function attachRatingControls(card, trackName) {
+    async function attachRatingControls(card, trackName, initialRating) {
       if (!card || card.querySelector(":scope > .carson-rating-row")) return;
       const backend = window.polytrackBackend;
       const row = document.createElement("div");
@@ -256,7 +265,7 @@
       };
       try {
         if (!backend?.getCarsonTrackRating) throw new Error("Ratings backend is not ready");
-        draw(await backend.getCarsonTrackRating(trackName));
+        draw(initialRating || await backend.getCarsonTrackRating(trackName));
       } catch (e) {
         error.textContent = "Ratings unavailable";
         error.hidden = false;
@@ -320,14 +329,12 @@
         let rankedTracks = [...result.tracks];
         try {
           const backend = window.polytrackBackend;
-          if (!backend?.getCarsonTrackScores) throw new Error("Ratings score service is not ready");
-          const names = rankedTracks.map(item => item.file.name.slice(0, -6).replace(/_/g, " "));
-          const scores = await backend.getCarsonTrackScores(names);
+          const scores = result.scores || new Map();
           rankedTracks.sort((a, b) => {
             const nameA = a.file.name.slice(0, -6).replace(/_/g, " ");
             const nameB = b.file.name.slice(0, -6).replace(/_/g, " ");
-            const scoreA = scores.get(backend.slugify(nameA)) ?? 0;
-            const scoreB = scores.get(backend.slugify(nameB)) ?? 0;
+            const scoreA = scores.get(backend.slugify(nameA))?.score ?? 0;
+            const scoreB = scores.get(backend.slugify(nameB))?.score ?? 0;
             return scoreB - scoreA || nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
           });
         } catch (error) {
@@ -370,7 +377,7 @@
               || newNodes.find(node => node.querySelector(".track"))?.querySelector(".track")
               || newNodes[0];
             if (!card) throw new Error("Could not locate rendered Carson track tile");
-            attachRatingControls(card, metadata.name);
+            attachRatingControls(card, metadata.name, result.scores?.get(window.polytrackBackend?.slugify(metadata.name)));
             added++;
           } catch (error) {
             console.error("Could not parse/render Carson track:", item.file.name, error);
