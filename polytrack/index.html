@@ -54,7 +54,7 @@
       // making leaderboard requests; otherwise the first requests can escape interception.
       (async () => {
         try {
-          await import("./supabase-backend.js?v=20261101-6");
+          await import("./supabase-backend.js?v=20261101-7");
         } catch (error) {
           console.error("PolyTrack Supabase bridge failed to load:", error);
         }
@@ -66,7 +66,7 @@
           document.head.appendChild(script);
         });
         await loadScript("main.bundle.js?v=20261027-15");
-        await loadScript("carson-tracks.js?v=20261101-4");
+        await loadScript("carson-tracks.js?v=20261101-5");
       })();
     </script>
   <title>Dashboard | RapidIdentity</title>
