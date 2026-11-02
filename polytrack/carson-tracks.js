@@ -315,7 +315,26 @@
 
         let added = 0;
         const failures = [...result.failures];
-        for (const item of result.tracks) {
+        // Rank Carson tracks by community score (👍 = +1, 👎 = -1).
+        // Missing ratings start at zero; ties are alphabetical.
+        let rankedTracks = [...result.tracks];
+        try {
+          const backend = window.polytrackBackend;
+          if (!backend?.getCarsonTrackScores) throw new Error("Ratings score service is not ready");
+          const names = rankedTracks.map(item => item.file.name.slice(0, -6).replace(/_/g, " "));
+          const scores = await backend.getCarsonTrackScores(names);
+          rankedTracks.sort((a, b) => {
+            const nameA = a.file.name.slice(0, -6).replace(/_/g, " ");
+            const nameB = b.file.name.slice(0, -6).replace(/_/g, " ");
+            const scoreA = scores.get(backend.slugify(nameA)) ?? 0;
+            const scoreB = scores.get(backend.slugify(nameB)) ?? 0;
+            return scoreB - scoreA || nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+          });
+        } catch (error) {
+          console.warn("Could not load Carson rating scores; using alphabetical order:", error);
+          rankedTracks.sort((a, b) => a.file.name.localeCompare(b.file.name, undefined, { sensitivity: "base" }));
+        }
+        for (const item of rankedTracks) {
           try {
             const parsed = typeof window.__carsonParseTrack === "function"
               ? window.__carsonParseTrack(item.code)
