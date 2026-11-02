@@ -755,17 +755,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     }
   };
   async function getCarsonTrackScores(trackNames) {
-    const slugs = [...new Set((trackNames || []).map(name => slugify(name)).filter(Boolean))];
-    const scores = new Map(slugs.map(slug => [slug, 0]));
-    if (!slugs.length) return scores;
+    const slugs = [...new Set((trackNames || []).map(slugify).filter(Boolean))];
+    const ratings = new Map(slugs.map(slug => [slug, { score: 0, up: 0, down: 0, myVote: null }]));
+    if (!slugs.length) return ratings;
     const { data, error } = await client.from("carson_track_ratings")
-      .select("track_slug,vote").in("track_slug", slugs).limit(10000);
+      .select("track_slug,player_key,vote").in("track_slug", slugs).limit(10000);
     if (error) throw error;
     for (const row of data || []) {
-      const slug = String(row.track_slug || "");
-      if (scores.has(slug)) scores.set(slug, scores.get(slug) + (Number(row.vote) === 1 ? 1 : Number(row.vote) === -1 ? -1 : 0));
+      const item = ratings.get(String(row.track_slug || ""));
+      if (!item) continue;
+      const vote = Number(row.vote);
+      if (vote === 1) { item.score++; item.up++; }
+      else if (vote === -1) { item.score--; item.down++; }
+      if (row.player_key === PLAYER_KEY) item.myVote = vote;
     }
-    return scores;
+    return ratings;
   }
 
   async function getCarsonTrackRating(trackName) {
