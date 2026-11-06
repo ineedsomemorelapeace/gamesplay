@@ -69,8 +69,8 @@
     button.className = "button carson";
     button.querySelector(".cover")?.remove();
     const label = button.querySelector("span, p, .title");
-    if (label) label.textContent = "Carson Tracks";
-    else button.textContent = "Carson Tracks";
+    if (label) label.textContent = "NA tracks";
+    else button.textContent = "NA tracks";
     tabs.insertBefore(button, custom);
 
     const container = document.createElement("div");
