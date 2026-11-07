@@ -30,7 +30,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   }
   const id = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
   // Stable browser identity lets Supabase keep one personal best per player and track.
-  const PLAYER_KEY = (() => {
+  let PLAYER_KEY = (() => {
     const storageKey = "polytrack-supabase-player-key";
     try {
       let value = localStorage.getItem(storageKey);
@@ -43,6 +43,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       return id();
     }
   })();
+
+  function setPlayerKey(value) {
+    const key = String(value || "").trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(key)) throw new Error("Invalid PolyTrack account code");
+    PLAYER_KEY = key;
+    try { localStorage.setItem("polytrack-supabase-player-key", key); } catch {}
+  }
+
   const inviteCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)),
     n => "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[n % 32]).join("");
 
@@ -629,8 +637,10 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     catch { return false; }
   }
   function isUserUrl(value) {
-    try { return new URL(String(value), location.href).pathname.replace(/\/$/, "").endsWith("/user"); }
-    catch { return false; }
+    try {
+      const path = new URL(String(value), location.href).pathname.replace(/\/$/, "");
+      return /\/user(?:\/[a-f0-9]{64})?$/i.test(path);
+    } catch { return false; }
   }
   async function handleRecordingsRequest(url) {
     const params = new URL(String(url), location.href).searchParams;
@@ -672,27 +682,65 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     }
     return null;
   }
-  async function handleUserRequest(method, bodyText = "") {
+  async function handleUserRequest(url, method, bodyText = "") {
     const methodUpper = String(method).toUpperCase();
-    if (methodUpper === "POST") {
-      let payload = null;
-      try { payload = JSON.parse(bodyText); } catch {
-        try { payload = Object.fromEntries(new URLSearchParams(bodyText)); } catch {}
+    const parsedUrl = new URL(String(url), location.href);
+    const pathParts = parsedUrl.pathname.split("/").filter(Boolean);
+    const bodyPayload = () => {
+      try { return JSON.parse(bodyText); } catch {
+        try { return Object.fromEntries(new URLSearchParams(bodyText)); } catch { return {}; }
       }
-      const countryCode = findCountryCode(payload);
+    };
+    if (methodUpper === "POST" || methodUpper === "PUT") {
+      const payload = bodyPayload() || {};
+      const profile = payload.user && typeof payload.user === "object" ? payload.user : payload;
+      const countryCode = findCountryCode(profile);
       if (countryCode) {
         try { localStorage.setItem("polytrack-country-code", countryCode); } catch {}
       }
-      return { status: 200, body: null, raw: "" };
+
+      const accountId = String(
+        profile.userId || profile.id || profile.user_id ||
+        parsedUrl.searchParams.get("userId") || parsedUrl.searchParams.get("id") || ""
+      ).trim().toLowerCase();
+      const name = String(profile.name || profile.nickname || profile.username || profile.playerName || "").trim();
+      const carColors = String(profile.carColors || profile.car_colors || "").trim();
+      if (!accountId || !name || !carColors) {
+        return { status: 400, body: { error: "PolyTrack account export is missing its user ID, name, or car colors." } };
+      }
+
+      const { error } = await client.rpc("polytrack_save_user", {
+        p_token: accountId,
+        p_name: name,
+        p_car_colors: carColors,
+        p_old_player_key: PLAYER_KEY
+      });
+      if (error) throw error;
+      setPlayerKey(accountId);
+      return { status: 200, body: { userId: accountId, id: accountId, name, nickname: name, carColors, isVerifier: false } };
     }
-    let countryCode = null;
-    try { countryCode = normalizeCountryCode(localStorage.getItem("polytrack-country-code")); } catch {}
-    return { status: 200, body: countryCode ? { countryCode } : null, raw: countryCode ? JSON.stringify({ countryCode }) : "null" };
+
+    if (methodUpper === "GET") {
+      const accountId = String(
+        parsedUrl.searchParams.get("userId") ||
+        parsedUrl.searchParams.get("id") ||
+        pathParts[pathParts.length - 1] ||
+        ""
+      ).trim().toLowerCase();
+      if (accountId) {
+        const { data, error } = await client.rpc("polytrack_get_user", { p_token: accountId });
+        if (error) throw error;
+        if (!data) return { status: 404, body: { error: "User does not exist on this server." } };
+        setPlayerKey(accountId);
+        return { status: 200, body: data };
+      }
+    }
+    return { status: 405, body: { error: "Method not supported" } };
   }
   async function handleCompatRequest(url, method, bodyText = "") {
     if (isLeaderboardUrl(url)) return handleLeaderboardRequest(url, method, bodyText);
     if (isRecordingsUrl(url)) return handleRecordingsRequest(url);
-    if (isUserUrl(url)) return handleUserRequest(method, bodyText);
+    if (isUserUrl(url)) return handleUserRequest(url, method, bodyText);
     return { status: 404, body: { error: "Unknown endpoint" } };
   }
 
