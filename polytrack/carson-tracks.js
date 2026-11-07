@@ -226,8 +226,8 @@
       const row = document.createElement("div");
       row.className = "carson-rating-row";
       const choices = [
-        { vote: 1, off: "images/apply.svg", on: "images/apply.svg", alt: "Thumbs up" },
-        { vote: -1, off: "images/cancel.svg", on: "images/cancel.svg", alt: "Thumbs down" }
+        { vote: 1, off: "images/grating.svg", on: "images/grating.svg", alt: "Good rating" },
+        { vote: -1, off: "images/brating.svg", on: "images/brating.svg", alt: "Bad rating" }
       ];
       const buttons = new Map();
       for (const choice of choices) {
