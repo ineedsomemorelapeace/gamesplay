@@ -683,63 +683,43 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return null;
   }
   async function handleUserRequest(url, method, bodyText = "") {
-    const methodUpper = String(method).toUpperCase();
+    const methodUpper = String(method || "GET").toUpperCase();
     const parsedUrl = new URL(String(url), location.href);
-    const pathParts = parsedUrl.pathname.split("/").filter(Boolean);
-    const bodyPayload = () => {
-      try { return JSON.parse(bodyText); } catch {
-        try { return Object.fromEntries(new URLSearchParams(bodyText)); } catch { return {}; }
+    const form = new URLSearchParams(bodyText || "");
+    if (methodUpper === "POST") {
+      // Native PolyTrack 0.6 sends user profiles as application/x-www-form-urlencoded.
+      const token = String(form.get("userToken") || "").trim().toLowerCase();
+      const nickname = String(form.get("nickname") || "").trim();
+      const countryCode = normalizeCountryCode(form.get("countryCode"));
+      const carStyle = String(form.get("carStyle") || "").trim();
+      if (!/^[a-f0-9]{64}$/.test(token) || !nickname || !carStyle) {
+        return { status: 400, body: { error: "Invalid PolyTrack profile upload" } };
       }
-    };
-    if (methodUpper === "POST" || methodUpper === "PUT") {
-      const payload = bodyPayload() || {};
-      const profile = payload.user && typeof payload.user === "object" ? payload.user : payload;
-      const countryCode = findCountryCode(profile);
-      if (countryCode) {
-        try { localStorage.setItem("polytrack-country-code", countryCode); } catch {}
-      }
-
-      const routeId = pathParts.length > 1 ? pathParts[pathParts.length - 1] : "";
-      const accountId = String(
-        profile.userId || profile.id || profile.user_id ||
-        parsedUrl.searchParams.get("userId") || parsedUrl.searchParams.get("id") || routeId || ""
-      ).trim().toLowerCase();
-      const name = String(profile.name || profile.nickname || profile.username || profile.playerName || "").trim();
-      const carColors = String(profile.carColors || profile.car_colors || "").trim();
-      // Keep the original country-code-only /user POST behavior unchanged.
-      if (!accountId || !name || !carColors) return { status: 200, body: null, raw: "" };
-
       const { error } = await client.rpc("polytrack_save_user", {
-        p_token: accountId,
-        p_name: name,
-        p_car_colors: carColors,
+        p_token: token,
+        p_name: nickname,
+        p_car_colors: "ffffffffffffffffffffffff",
+        p_car_style: carStyle,
+        p_country_code: countryCode,
         p_old_player_key: PLAYER_KEY
       });
       if (error) throw error;
-      setPlayerKey(accountId);
-      return { status: 200, body: { userId: accountId, id: accountId, name, nickname: name, carColors, isVerifier: false } };
+      setPlayerKey(token);
+      if (countryCode) {
+        try { localStorage.setItem("polytrack-country-code", countryCode); } catch {}
+      }
+      return { status: 200, body: null, raw: "" };
     }
 
     if (methodUpper === "GET") {
-      const routeId = pathParts.length > 1 ? pathParts[pathParts.length - 1] : "";
-      const accountId = String(
-        parsedUrl.searchParams.get("userId") ||
-        parsedUrl.searchParams.get("id") ||
-        routeId ||
-        (/^[a-f0-9]{64}$/i.test(PLAYER_KEY) ? PLAYER_KEY : "")
-      ).trim().toLowerCase();
-      if (accountId) {
-        const { data, error } = await client.rpc("polytrack_get_user", { p_token: accountId });
-        if (error) throw error;
-        if (!data) return { status: 404, body: { error: "User does not exist on this server." } };
-        setPlayerKey(accountId);
-        return { status: 200, body: data };
+      const token = String(parsedUrl.searchParams.get("userToken") || "").trim().toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(token)) {
+        return { status: 400, body: { error: "Invalid PolyTrack user token" } };
       }
-    }
-    if (methodUpper === "GET") {
-      let countryCode = null;
-      try { countryCode = normalizeCountryCode(localStorage.getItem("polytrack-country-code")); } catch {}
-      return { status: 200, body: countryCode ? { countryCode } : null };
+      const { data, error } = await client.rpc("polytrack_get_user", { p_token: token });
+      if (error) throw error;
+      if (data) setPlayerKey(token);
+      return { status: 200, body: data ?? null, raw: data == null ? "null" : undefined };
     }
     return { status: 405, body: { error: "Method not supported" } };
   }
@@ -749,6 +729,62 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     if (isUserUrl(url)) return handleUserRequest(url, method, bodyText);
     return { status: 404, body: { error: "Unknown endpoint" } };
   }
+
+  // PolyTrack 0.6 uses XMLHttpRequest (not fetch) for /v6/user profile sync.
+  // Intercept only the legacy endpoints handled by this compatibility bridge.
+  const NativeXHR = window.XMLHttpRequest;
+  const nativeXHROpen = NativeXHR.prototype.open;
+  const nativeXHRSend = NativeXHR.prototype.send;
+  NativeXHR.prototype.open = function(method, url, ...rest) {
+    this.__polytrackCompat = !!url && (
+      isLeaderboardUrl(url) || isRecordingsUrl(url) || isUserUrl(url)
+    );
+    if (this.__polytrackCompat) {
+      this.__polytrackCompatMethod = String(method || "GET").toUpperCase();
+      this.__polytrackCompatUrl = String(url);
+      this.readyState = 1;
+      return;
+    }
+    return nativeXHROpen.call(this, method, url, ...rest);
+  };
+  NativeXHR.prototype.send = function(body = null) {
+    if (!this.__polytrackCompat) return nativeXHRSend.call(this, body);
+    const xhr = this;
+    const method = xhr.__polytrackCompatMethod || "GET";
+    const url = xhr.__polytrackCompatUrl;
+    const bodyText = typeof body === "string" ? body :
+      body instanceof URLSearchParams ? body.toString() : "";
+    Promise.resolve().then(() => handleCompatRequest(url, method, bodyText)).then(result => {
+      const responseText = result.raw !== undefined ? result.raw : JSON.stringify(result.body);
+      for (const [key, value] of Object.entries({
+        readyState: 4,
+        status: result.status,
+        statusText: result.status >= 200 && result.status < 300 ? "OK" : "Error",
+        responseText,
+        response: responseText
+      })) {
+        try { Object.defineProperty(xhr, key, { configurable: true, get: () => value }); } catch {}
+      }
+      try { xhr.dispatchEvent(new Event("readystatechange")); } catch {}
+      try { xhr.dispatchEvent(new Event(result.status >= 200 && result.status < 400 ? "load" : "error")); } catch {}
+      try { xhr.dispatchEvent(new Event("loadend")); } catch {}
+    }).catch(error => {
+      console.error("PolyTrack Supabase XMLHttpRequest failed:", error);
+      const responseText = JSON.stringify({ error: error?.message || "Request failed" });
+      for (const [key, value] of Object.entries({
+        readyState: 4, status: 500, statusText: "Error", responseText, response: responseText
+      })) {
+        try { Object.defineProperty(xhr, key, { configurable: true, get: () => value }); } catch {}
+      }
+      try { xhr.dispatchEvent(new Event("readystatechange")); } catch {}
+      try { xhr.dispatchEvent(new Event("error")); } catch {}
+      try { xhr.dispatchEvent(new Event("loadend")); } catch {}
+    });
+  };
+  NativeXHR.prototype.overrideMimeType = function(type) {
+    if (this.__polytrackCompat) return;
+    return NativeXHR.prototype.__nativeOverrideMimeType?.call(this, type);
+  };
 
   const NativeFetch = window.fetch.bind(window);
   window.fetch = async function(input, init = {}) {
