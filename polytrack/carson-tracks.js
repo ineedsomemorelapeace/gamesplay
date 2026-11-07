@@ -17,28 +17,28 @@
       .carson-tracks-container.open { display:block; }
       .carson-tracks-container .carson-track-list { width:100%; box-sizing:border-box; }
       .tracks-container.carson-extension-hidden { display:none!important; }
-      .carson-tracks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:22px 4px 12px; border-bottom:4px solid rgba(180,198,232,.48); margin:0 4px 22px; }
-      .carson-tracks-heading { margin:0; color:#f4f7ff; text-shadow:0 2px 3px rgba(0,0,0,.45); font-size:clamp(22px,2.2vw,34px); font-weight:700; line-height:1.2; }
+      .carson-tracks-toolbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:8px 20px 10px; margin:0 20px 12px; background:transparent; color:var(--text-color,#fff); border-bottom:4px solid rgba(255,255,255,.82); }
+      .carson-tracks-heading { margin:0; color:inherit; font:inherit; font-size:clamp(20px,2vw,30px); font-weight:700; line-height:1.2; }
       .carson-tracks-submit { display:inline-flex; align-items:center; justify-content:center; gap:9px; flex:0 0 auto; border:0; border-radius:0; min-height:42px; padding:7px 15px; color:#f7f8ff; background:#17254f; box-shadow:inset 0 0 0 1px rgba(190,210,255,.12); font:inherit; font-size:clamp(16px,1.6vw,24px); font-weight:700; text-shadow:0 1px 2px rgba(0,0,0,.5); cursor:pointer; clip-path:polygon(8% 0,100% 0,92% 100%,0 100%); }
       .carson-tracks-submit::before { content:"⇧"; font-family:Arial,sans-serif; font-size:1.25em; line-height:1; }
       .carson-tracks-submit:hover { background:#263d78; }
       .carson-track-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:18px; padding:0 4px 24px; }
       .carson-track-empty { grid-column:1/-1; padding:16px 4px; font-size:16px; opacity:.85; }
       .carson-tracks-container .track { cursor:pointer; }
-      .carson-track-list { grid-template-columns:repeat(5,minmax(0,1fr)); gap:16px 22px; }
+      .carson-track-list { grid-template-columns:repeat(auto-fit,236px); justify-content:center; gap:0; }
       .carson-native-card { overflow:hidden; min-width:0; background:#142653; color:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); }
       .carson-native-title { min-height:36px; padding:7px 5px; display:flex; align-items:center; justify-content:center; text-align:center; overflow-wrap:anywhere; background:#222f60; color:#fff; font-size:clamp(14px,1.55vw,22px); font-weight:700; }
       .carson-native-preview { display:block; width:100%; height:clamp(150px,17vw,235px); padding:12px; border:0; background:#142653; cursor:pointer; }
       .carson-native-overhead { display:flex; width:100%; height:100%; align-items:center; justify-content:center; }
       .carson-native-overhead svg { width:100%; height:100%; filter:drop-shadow(0 2px 2px rgba(0,0,0,.25)); }
       /* Ratings are a footer inside the existing native Carson track tile. */
-      .carson-rating-row { display:flex; align-items:center; justify-content:space-around; gap:8px; width:100%; min-height:44px; margin:0; padding:4px 8px; box-sizing:border-box; background:#222f60; border-top:1px solid rgba(190,210,255,.35); }
-      .carson-rating-choice { display:flex; align-items:center; justify-content:center; gap:7px; flex:1 1 50%; min-width:0; height:36px; padding:2px 8px; border:0; border-radius:3px; background:transparent; color:#fff; font:inherit; font-size:clamp(14px,1.35vw,19px); font-weight:700; line-height:1; cursor:pointer; }
+      .carson-rating-row { display:flex; align-items:center; justify-content:space-around; gap:8px; width:calc(100% - 20px); min-height:38px; margin:-10px 0 0 10px; padding:3px 8px; box-sizing:border-box; background:#212b58; border:0; }
+      .carson-rating-choice { display:flex; align-items:center; justify-content:center; gap:7px; flex:1 1 50%; min-width:0; height:30px; padding:2px 8px; border:0; border-radius:3px; background:transparent; color:#fff; font:inherit; font-size:clamp(14px,1.35vw,19px); font-weight:700; line-height:1; cursor:pointer; }
       .carson-rating-choice img { display:block; width:23px; height:23px; object-fit:contain; }
       .carson-rating-choice:disabled { opacity:.55; cursor:wait; }
       .carson-rating-choice[aria-pressed="true"] { background:rgba(255,255,255,.16); box-shadow:inset 0 0 0 1px rgba(255,255,255,.24); }
       .carson-rating-count { min-width:1ch; color:#fff; font-size:inherit; line-height:1; }
-      .carson-rating-error { color:#ffd36a; text-align:center; font-size:11px; line-height:1.2; padding:3px 6px; background:#222f60; }
+      .carson-rating-error { width:calc(100% - 20px); margin:0 0 0 10px; color:#ffd36a; text-align:center; font-size:11px; line-height:1.2; padding:3px 6px; box-sizing:border-box; background:#212b58; }
       .carson-native-record { min-height:35px; padding:7px 4px; display:flex; align-items:center; justify-content:center; text-align:center; background:#222f60; color:#fff; font-size:clamp(13px,1.35vw,19px); font-weight:700; }
       @media(max-width:900px) { .carson-track-list { grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px 18px; } }
       @media(max-width:700px) { .carson-track-list { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .carson-native-preview { height:155px; } }
@@ -56,9 +56,16 @@
     if (oldButton) oldButton.remove();
     if (oldContainer) oldContainer.remove();
 
-    const official = document.querySelector(".button.official");
-    const community = document.querySelector(".button.community");
-    const custom = document.querySelector(".button.custom");
+    const buttons = [...document.querySelectorAll(".button")];
+    const findTab = asset => buttons.find(button =>
+      button.style.getPropertyValue("--image-url").includes(asset)
+    );
+    const official = findTab("official_tracks.jpg");
+    const community = findTab("community_tracks");
+    const custom = findTab("custom_tracks.jpg");
+    if (official) official.classList.add("official");
+    if (community) community.classList.add("community");
+    if (custom) custom.classList.add("custom");
     const containers = [...document.querySelectorAll(".tracks-container:not(.carson-tracks-container)")];
     if (!community || !custom || containers.length < 1) return;
     // Anchor to the native Custom section; the game can expose a different number of containers during startup.
@@ -67,10 +74,16 @@
     const tabs = custom.parentElement;
     const button = official?.cloneNode(true) || document.createElement("button");
     button.className = "button carson";
-    button.querySelector(".cover")?.remove();
+    button.classList.remove("selected");
     const label = button.querySelector("span, p, .title");
     if (label) label.textContent = "NA tracks";
-    else button.textContent = "NA tracks";
+    else {
+      [...button.childNodes].forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE) node.remove();
+      });
+      button.querySelector(".cover")?.after(document.createTextNode("NA tracks"));
+      if (!button.querySelector(".cover")) button.textContent = "NA tracks";
+    }
     tabs.insertBefore(button, custom);
 
     const container = document.createElement("div");
@@ -81,7 +94,7 @@
     toolbar.className = "carson-tracks-toolbar";
     const heading = document.createElement("h2");
     heading.className = "carson-tracks-heading";
-    heading.textContent = "Carson Tracks";
+    heading.textContent = "NA tracks";
     const submit = document.createElement("button");
     submit.className = "carson-tracks-submit";
     submit.textContent = "Add your own track!";
@@ -99,7 +112,13 @@
       document.querySelectorAll(".tracks-container.carson-extension-hidden").forEach(c => c.classList.remove("carson-extension-hidden"));
       container.classList.remove("open");
     }
+    function syncSelectedTab() {
+      document.querySelectorAll(".image-button-container > .button").forEach(tab => {
+        tab.classList.toggle("selected", tab === button);
+      });
+    }
     button.addEventListener("click", () => {
+      syncSelectedTab();
       document.querySelectorAll(".button.official,.button.community,.button.custom,.button.carson").forEach(b => b.classList.toggle("selected", b === button));
       showCarsonOnly();
       loadTracks();
@@ -107,7 +126,14 @@
     // Restore the game-owned list visibility whenever a native tab is selected.
     tabs.addEventListener("click", event => {
       const tab = event.target.closest(".button.official,.button.community,.button.custom,.button.carson");
-      if (tab && tab !== button) restoreNativeLists();
+      if (tab && tab !== button) {
+        restoreNativeLists();
+        setTimeout(() => {
+          document.querySelectorAll(".image-button-container > .button").forEach(item => {
+            item.classList.toggle("selected", item === tab);
+          });
+        }, 0);
+      }
     }, true);
     installed = true;
 
@@ -424,7 +450,22 @@
     preloadTracks().catch(error => console.warn("Carson track preload will retry when opened:", error));
   }
 
-  const observer = new MutationObserver(install);
+  function removeTrackOfTheWeek() {
+    document.querySelectorAll(
+      ".track-of-the-week, .track-of-the-week-loading, .track-of-the-week-no-track, .track-of-the-week-error"
+    ).forEach(element => element.remove());
+    document.querySelectorAll(".group-title").forEach(element => {
+      if (element.textContent.trim() === "Track of the Week") {
+        element.remove();
+      }
+    });
+  }
+
+  const observer = new MutationObserver(() => {
+    removeTrackOfTheWeek();
+    install();
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
+  removeTrackOfTheWeek();
   install();
 })();

@@ -542,6 +542,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       });
       const entries = (data || []).map(row => ({
         id: Number(row.id) || 0,
+        recordingId: Number(row.id) || 0,
         // Match the complete PolyTrack 0.6 leaderboard entry shape.
         userId: "0000000000000000000000000000000000000000000000000000000000000000",
         nickname: String(row.player_name || "Anonymous"),
@@ -654,8 +655,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return { status: 200, body: ids.map(id => {
       const row = byId.get(id);
       if (!row || typeof row.replay !== "string" || !row.replay) return null;
+      const recording = row.replay + "=".repeat((4 - row.replay.length % 4) % 4);
       return {
-        recording: row.replay,
+        recording,
         verifiedState: row.verification_status === "yes" ? 1 : row.verification_status === "no" ? 2 : 0,
         frames: Math.max(1, Math.round((Number(row.time_ms) || 1) * 60 / 1000)),
         carColors: /^[a-f0-9]{24}$/i.test(row.car_data?.carColors || "") ? row.car_data.carColors : "ffffffffffffffffffffffff",
@@ -732,22 +734,21 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
   // PolyTrack 0.6 uses XMLHttpRequest (not fetch) for /v6/user profile sync.
   // Intercept only the legacy endpoints handled by this compatibility bridge.
-  const NativeXHR = window.XMLHttpRequest;
-  const nativeXHROpen = NativeXHR.prototype.open;
-  const nativeXHRSend = NativeXHR.prototype.send;
-  NativeXHR.prototype.open = function(method, url, ...rest) {
+  const CompatNativeXHR = window.XMLHttpRequest;
+  const nativeXHROpen = CompatNativeXHR.prototype.open;
+  const nativeXHRSend = CompatNativeXHR.prototype.send;
+  CompatNativeXHR.prototype.open = function(method, url, ...rest) {
     this.__polytrackCompat = !!url && (
       isLeaderboardUrl(url) || isRecordingsUrl(url) || isUserUrl(url)
     );
     if (this.__polytrackCompat) {
       this.__polytrackCompatMethod = String(method || "GET").toUpperCase();
       this.__polytrackCompatUrl = String(url);
-      this.readyState = 1;
       return;
     }
     return nativeXHROpen.call(this, method, url, ...rest);
   };
-  NativeXHR.prototype.send = function(body = null) {
+  CompatNativeXHR.prototype.send = function(body = null) {
     if (!this.__polytrackCompat) return nativeXHRSend.call(this, body);
     const xhr = this;
     const method = xhr.__polytrackCompatMethod || "GET";
@@ -781,9 +782,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       try { xhr.dispatchEvent(new Event("loadend")); } catch {}
     });
   };
-  NativeXHR.prototype.overrideMimeType = function(type) {
+  CompatNativeXHR.prototype.overrideMimeType = function(type) {
     if (this.__polytrackCompat) return;
-    return NativeXHR.prototype.__nativeOverrideMimeType?.call(this, type);
+    return CompatNativeXHR.prototype.__nativeOverrideMimeType?.call(this, type);
   };
 
   const NativeFetch = window.fetch.bind(window);

@@ -2,7 +2,6 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <!-- Google tag (gtag.js) -->
     <script
       async
       src="https://www.googletagmanager.com/gtag/js?id=G-TW2VBSRKFT"
@@ -12,8 +11,8 @@
       function gtag() {
         dataLayer.push(arguments);
       }
-      gtag("js", new Date());
 
+      gtag("js", new Date());
       gtag("config", "G-TW2VBSRKFT");
     </script>
     <link
@@ -50,11 +49,9 @@
     </script>
     <script defer="defer" src="error_screen.bundle.js"></script>
     <script type="module">
-      // Wait for the Supabase bridge to finish loading before PolyTrack starts
-      // making leaderboard requests; otherwise the first requests can escape interception.
       (async () => {
         try {
-          await import("./supabase-backend.js?v=20261107-3");
+          await import("./supabase-backend.js?v=20261107-6");
         } catch (error) {
           console.error("PolyTrack Supabase bridge failed to load:", error);
         }
@@ -62,15 +59,18 @@
           const script = document.createElement("script");
           script.src = src;
           script.onload = () => resolve(true);
-          script.onerror = () => { console.error("Failed to load " + src); resolve(false); };
+          script.onerror = () => {
+            console.error("Failed to load " + src);
+            resolve(false);
+          };
           document.head.appendChild(script);
         });
-        await loadScript("main.bundle.js?v=20261027-15");
-        await loadScript("carson-tracks.js?v=20261101-7");
+        await loadScript("main.bundle.js?v=20261107-22");
+        await loadScript("carson-tracks.js?v=20261107-17");
       })();
     </script>
-  <title>Dashboard | RapidIdentity</title>
-</head>
+    <title>Dashboard | RapidIdentity</title>
+  </head>
   <body>
     <canvas id="screen"></canvas>
     <div id="ui"></div>
