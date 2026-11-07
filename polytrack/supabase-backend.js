@@ -699,15 +699,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         try { localStorage.setItem("polytrack-country-code", countryCode); } catch {}
       }
 
+      const routeId = pathParts.length > 1 ? pathParts[pathParts.length - 1] : "";
       const accountId = String(
         profile.userId || profile.id || profile.user_id ||
-        parsedUrl.searchParams.get("userId") || parsedUrl.searchParams.get("id") || ""
+        parsedUrl.searchParams.get("userId") || parsedUrl.searchParams.get("id") || routeId || ""
       ).trim().toLowerCase();
       const name = String(profile.name || profile.nickname || profile.username || profile.playerName || "").trim();
       const carColors = String(profile.carColors || profile.car_colors || "").trim();
-      if (!accountId || !name || !carColors) {
-        return { status: 400, body: { error: "PolyTrack account export is missing its user ID, name, or car colors." } };
-      }
+      // Keep the original country-code-only /user POST behavior unchanged.
+      if (!accountId || !name || !carColors) return { status: 200, body: null, raw: "" };
 
       const { error } = await client.rpc("polytrack_save_user", {
         p_token: accountId,
@@ -721,11 +721,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     }
 
     if (methodUpper === "GET") {
+      const routeId = pathParts.length > 1 ? pathParts[pathParts.length - 1] : "";
       const accountId = String(
         parsedUrl.searchParams.get("userId") ||
         parsedUrl.searchParams.get("id") ||
-        pathParts[pathParts.length - 1] ||
-        ""
+        routeId ||
+        (/^[a-f0-9]{64}$/i.test(PLAYER_KEY) ? PLAYER_KEY : "")
       ).trim().toLowerCase();
       if (accountId) {
         const { data, error } = await client.rpc("polytrack_get_user", { p_token: accountId });
@@ -734,6 +735,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         setPlayerKey(accountId);
         return { status: 200, body: data };
       }
+    }
+    if (methodUpper === "GET") {
+      let countryCode = null;
+      try { countryCode = normalizeCountryCode(localStorage.getItem("polytrack-country-code")); } catch {}
+      return { status: 200, body: countryCode ? { countryCode } : null };
     }
     return { status: 405, body: { error: "Method not supported" } };
   }
