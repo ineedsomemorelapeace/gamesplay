@@ -599,7 +599,20 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         country_code: normalizeCountryCode(get("countryCode") || get("country_code")) || (() => { try { return localStorage.getItem("polytrack-country-code") || null; } catch { return null; } })(),
         verification_status: "waiting"
       }).select("id").single();
-      if (error) throw error;
+      if (error) {
+        // PolyTrack can retry the exact same record after the first request already
+        // succeeded. The database rejects that duplicate; report it as an accepted
+        // no-op so the game does not show a misleading connection failure.
+        if (error.code === "P0001" && /duplicate submission/i.test(error.message || "")) {
+          leaderboardReadCache.clear();
+          leaderboardInflight.clear();
+          console.info("PolyTrack duplicate leaderboard submission ignored", {
+            track: String(trackId), player: playerName, timeMs
+          });
+          return { status: 200, body: null };
+        }
+        throw error;
+      }
 
       // A cached leaderboard read may have happened immediately before this
       // submission. Invalidate it so the newly saved time appears on the next read.
