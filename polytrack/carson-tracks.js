@@ -6,7 +6,6 @@
     location.href;
   const SITE_BASE = new URL("./", SCRIPT_URL);
   const MANIFEST = new URL("tracks/carson/manifest.json", SITE_BASE).href;
-  const DIRECTORY_API = "https://api.github.com/repos/ineedsomemorelapeace/gamesplay/contents/polytrack/tracks/carson";
   const FORM = "https://forms.gle/yFXbuVSDimBbD9fz5";
   if (!document.querySelector("#carson-tracks-style")) {
     const style = document.createElement("style");
@@ -172,41 +171,20 @@
     async function preloadTracks() {
       if (preloadPromise) return preloadPromise;
       preloadPromise = (async () => {
-        // GitHub Pages cannot enumerate directories. Query the repository's live folder
-        // first so adding a .track file requires no manifest or JavaScript edits.
-        let files = [];
-        try {
-          const response = await fetchWithRetry(DIRECTORY_API + "?ref=main", {}, 1, 6000);
-          const listing = await response.json();
-          if (!Array.isArray(listing)) throw new Error("GitHub folder listing was not an array");
-          files = listing
-            .filter(entry => entry && entry.type === "file" &&
-              typeof entry.name === "string" &&
-              entry.name.toLowerCase().endsWith(".track") &&
-              entry.name.toLowerCase() !== "a.track")
-            .map(entry => ({
-              name: entry.name,
-              url: new URL("tracks/carson/" + entry.name.split("/").map(encodeURIComponent).join("/"), SITE_BASE).href
-            }));
-        } catch (apiError) {
-          console.warn("Carson live directory lookup failed; trying manifest fallback:", apiError);
-        }
-
-        // The checked-in manifest remains a fallback for networks that block api.github.com.
-        if (!files.length) {
-          const manifestResponse = await fetchWithRetry(MANIFEST, {}, 2, 7000);
-          const manifest = await manifestResponse.json();
-          const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
-          if (!Array.isArray(entries)) throw new Error("Carson manifest has no tracks array");
-          files = entries
-            .map(entry => typeof entry === "string" ? { name: entry } : entry)
-            .filter(file => file && typeof file.name === "string" &&
-              file.name.toLowerCase().endsWith(".track") && file.name.toLowerCase() !== "a.track")
-            .map(file => ({
-              name: file.name,
-              url: new URL("tracks/carson/" + file.name.split("/").map(encodeURIComponent).join("/"), SITE_BASE).href
-            }));
-        }
+        // Use the checked-in manifest as the source of truth. This avoids GitHub
+        // Contents API rate limits and works on networks that block api.github.com.
+        const manifestResponse = await fetchWithRetry(MANIFEST, {}, 2, 7000);
+        const manifest = await manifestResponse.json();
+        const entries = Array.isArray(manifest) ? manifest : manifest.tracks;
+        if (!Array.isArray(entries)) throw new Error("Carson manifest has no tracks array");
+        let files = entries
+          .map(entry => typeof entry === "string" ? { name: entry } : entry)
+          .filter(file => file && typeof file.name === "string" &&
+            file.name.toLowerCase().endsWith(".track") && file.name.toLowerCase() !== "a.track")
+          .map(file => ({
+            name: file.name,
+            url: new URL("tracks/carson/" + file.name.split("/").map(encodeURIComponent).join("/"), SITE_BASE).href
+          }));
 
         // De-duplicate and sort consistently; no hard-coded track list or version ordering.
         const unique = new Map();
