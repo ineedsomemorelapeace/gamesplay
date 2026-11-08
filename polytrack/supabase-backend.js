@@ -601,6 +601,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       }).select("id").single();
       if (error) throw error;
 
+      // A cached leaderboard read may have happened immediately before this
+      // submission. Invalidate it so the newly saved time appears on the next read.
+      leaderboardReadCache.clear();
+      leaderboardInflight.clear();
+      console.info("PolyTrack leaderboard submission saved", {
+        id: Number(data.id), track: String(trackId), player: playerName, timeMs
+      });
+
       if (playerName.toLowerCase() !== "anonymous" && savedCarStyle) {
         try {
           const { data: oldRows, error: readError } = await client.from("polytrack_times")
@@ -828,6 +836,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         car_data: carData && typeof carData === "object" ? carData : {}, verification_status: "waiting"
       }).select("id,track_slug,track_name,player_name,time_ms,verification_status,created_at").single();
       if (error) throw error;
+      leaderboardReadCache.clear();
+      leaderboardInflight.clear();
+      console.info("PolyTrack leaderboard submission saved", {
+        id: Number(data.id), track: name, player: String(playerName || "Anonymous"), timeMs: ms
+      });
       return data;
     },
     async getTimes(trackName, { verifiedOnly = false, limit = 100 } = {}) {
