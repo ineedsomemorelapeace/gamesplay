@@ -18,7 +18,7 @@ if the user is not on the latest released version.
 
   // A fetch request is made to a local 'info.json' file to get the current version information.
   try {
-    var infoFetch = await fetch(new URL("assets/json/info.json", document.baseURI));
+    var infoFetch = await fetch(location.origin + "/assets/json/info.json");
     try {
       var infoResult = await infoFetch.json();
       // If the current version information is available in the JSON file, it is assigned to the 'currentVersion' variable.

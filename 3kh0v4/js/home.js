@@ -65,7 +65,7 @@ async function setRandomSay() {
   }
   // If the random message is "%GAMES_NUMBER%", replace it with the number of games available
   else if (randomSplash == "%GAMES_NUMBER%") {
-    var gamesFetch = await fetch(new URL("assets/json/games.json", document.baseURI));
+    var gamesFetch = await fetch(location.origin + "/assets/json/games.json");
     var games = await gamesFetch.json();
     randomSplash = "There are " + games.length + " games currently";
   }
