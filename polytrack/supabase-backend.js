@@ -740,60 +740,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     return { status: 404, body: { error: "Unknown endpoint" } };
   }
 
-  // PolyTrack 0.6 uses XMLHttpRequest (not fetch) for /v6/user profile sync.
-  // Intercept only the legacy endpoints handled by this compatibility bridge.
-  const CompatNativeXHR = window.XMLHttpRequest;
-  const nativeXHROpen = CompatNativeXHR.prototype.open;
-  const nativeXHRSend = CompatNativeXHR.prototype.send;
-  CompatNativeXHR.prototype.open = function(method, url, ...rest) {
-    this.__polytrackCompat = !!url && (
-      isLeaderboardUrl(url) || isRecordingsUrl(url) || isUserUrl(url)
-    );
-    if (this.__polytrackCompat) {
-      this.__polytrackCompatMethod = String(method || "GET").toUpperCase();
-      this.__polytrackCompatUrl = String(url);
-      return;
-    }
-    return nativeXHROpen.call(this, method, url, ...rest);
-  };
-  CompatNativeXHR.prototype.send = function(body = null) {
-    if (!this.__polytrackCompat) return nativeXHRSend.call(this, body);
-    const xhr = this;
-    const method = xhr.__polytrackCompatMethod || "GET";
-    const url = xhr.__polytrackCompatUrl;
-    const bodyText = typeof body === "string" ? body :
-      body instanceof URLSearchParams ? body.toString() : "";
-    Promise.resolve().then(() => handleCompatRequest(url, method, bodyText)).then(result => {
-      const responseText = result.raw !== undefined ? result.raw : JSON.stringify(result.body);
-      for (const [key, value] of Object.entries({
-        readyState: 4,
-        status: result.status,
-        statusText: result.status >= 200 && result.status < 300 ? "OK" : "Error",
-        responseText,
-        response: responseText
-      })) {
-        try { Object.defineProperty(xhr, key, { configurable: true, get: () => value }); } catch {}
-      }
-      try { xhr.dispatchEvent(new Event("readystatechange")); } catch {}
-      try { xhr.dispatchEvent(new Event(result.status >= 200 && result.status < 400 ? "load" : "error")); } catch {}
-      try { xhr.dispatchEvent(new Event("loadend")); } catch {}
-    }).catch(error => {
-      console.error("PolyTrack Supabase XMLHttpRequest failed:", error);
-      const responseText = JSON.stringify({ error: error?.message || "Request failed" });
-      for (const [key, value] of Object.entries({
-        readyState: 4, status: 500, statusText: "Error", responseText, response: responseText
-      })) {
-        try { Object.defineProperty(xhr, key, { configurable: true, get: () => value }); } catch {}
-      }
-      try { xhr.dispatchEvent(new Event("readystatechange")); } catch {}
-      try { xhr.dispatchEvent(new Event("error")); } catch {}
-      try { xhr.dispatchEvent(new Event("loadend")); } catch {}
-    });
-  };
-  CompatNativeXHR.prototype.overrideMimeType = function(type) {
-    if (this.__polytrackCompat) return;
-    return CompatNativeXHR.prototype.__nativeOverrideMimeType?.call(this, type);
-  };
+  // The PolyTrackXHR class above already intercepts legacy API requests while
+  // keeping native open() active, so request headers can be set normally.
 
   const NativeFetch = window.fetch.bind(window);
   window.fetch = async function(input, init = {}) {
