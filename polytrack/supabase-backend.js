@@ -396,9 +396,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       let identity = "";
       try { identity = JSON.stringify(value); } catch {}
       const matchesTrack = item.path.includes(wanted) || identity.includes(wanted);
-      if (matchesTrack && Number.isFinite(frames) && frames > 0 && frames <= 5999999 &&
-          typeof replay === "string" && replay.length > 0 && replay.length < 10000) {
-        candidates.push({ frames, replay, name: value.name || value.playerName || "Anonymous", carColors: value.carColors || "" });
+      if (matchesTrack && Number.isFinite(frames) && frames > 0 && frames <= 5999999) {
+        // Keep the local finish time even if no replay was retained or a long-run
+        // recording exceeded the old 10 KB cutoff.
+        const safeReplay = typeof replay === "string" && replay.length > 0 && replay.length <= 2000000
+          ? replay : null;
+        candidates.push({
+          frames, replay: safeReplay,
+          name: value.name || value.playerName || "Anonymous",
+          carColors: value.carColors || ""
+        });
       }
       for (const [childKey, child] of Object.entries(value)) {
         if (child && typeof child === "object") stack.push({ value: child, path: item.path + "/" + childKey, depth: item.depth + 1 });
@@ -527,6 +534,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     if (methodUpper === "GET") {
       const trackId = params.get("trackId");
       if (!trackId) return { status: 400, body: { error: "Missing trackId" } };
+
+      // Recover a locally saved personal best before reading the online leaderboard,
+      // so the recovered time can appear in this same track-opening request.
+      await importLocalBestForTrack(trackId);
+
       const identities = trackIdentityCandidates(trackId);
       const slugCandidates = [...new Set(identities.map(slugify))];
       const rawCandidates = [...new Set(identities)];
