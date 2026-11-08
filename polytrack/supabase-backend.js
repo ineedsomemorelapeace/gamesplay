@@ -382,6 +382,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   };
 
   // Import local saved bests only when a stored replay can be matched to this exact track.
+  // Oversized replays are omitted from Supabase, but the validated finish time is retained.
   // No guessed time is uploaded; a successful import is marked locally to prevent duplicates.
   const importedLocalBestKeys = new Set();
   const scannedLocalBestKeys = new Set();
@@ -396,11 +397,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       let identity = "";
       try { identity = JSON.stringify(value); } catch {}
       const matchesTrack = item.path.includes(wanted) || identity.includes(wanted);
-      if (matchesTrack && Number.isFinite(frames) && frames > 0 && frames <= 5999999) {
-        // Keep the local finish time even if no replay was retained or a long-run
-        // recording exceeded the old 10 KB cutoff.
-        const safeReplay = typeof replay === "string" && replay.length > 0 && replay.length <= 2000000
-          ? replay : null;
+      if (matchesTrack && Number.isFinite(frames) && frames > 0 && frames <= 5999999 &&
+          typeof replay === "string" && replay.length > 0) {
+        // A replay is required for a recoverable local record. Keep normal-sized
+        // replays, but omit oversized replay payloads while preserving the time.
+        const safeReplay = replay.length <= 2000000 ? replay : null;
         candidates.push({
           frames, replay: safeReplay,
           name: value.name || value.playerName || "Anonymous",
