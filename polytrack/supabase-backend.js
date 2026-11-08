@@ -65,15 +65,41 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       });
     }
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Supabase Realtime connection timed out")), 15000);
-      channel.subscribe(status => {
-        if (status === "SUBSCRIBED") { clearTimeout(timer); resolve(); }
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          clearTimeout(timer); reject(new Error("Supabase Realtime failed: " + status));
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve();
+      };
+      const timer = setTimeout(() => {
+        finish(new Error("Supabase Realtime subscribe timed out after 15 seconds"));
+      }, 15000);
+      channel.subscribe((status, error) => {
+        if (status === "SUBSCRIBED") {
+          console.info("PolyTrack multiplayer: Supabase channel connected", channel.topic);
+          finish();
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          const detail = error?.message || error?.reason || error?.cause || "No server detail provided";
+          console.error("PolyTrack multiplayer: Supabase channel failed", {
+            status, detail, topic: channel.topic, error
+          });
+          finish(new Error("Supabase Realtime " + status + ": " + String(detail)));
         }
       });
+    }).catch(async error => {
+      try { await client.removeChannel(channel); } catch {}
+      throw error;
     });
-    try { await channel.track({ peerId, role: handlers["join-request"] ? "host" : "player" }); } catch {}
+    try {
+      const presenceResult = await channel.track({ peerId, role: handlers["join-request"] ? "host" : "player" });
+      if (presenceResult === "error") console.warn("PolyTrack multiplayer: presence tracking was rejected");
+    } catch (error) {
+      console.warn("PolyTrack multiplayer: presence tracking unavailable", error);
+    }
     return channel;
   }
 
