@@ -50,18 +50,20 @@
   function install() {
     const oldButton = document.querySelector(".button.carson");
     const oldContainer = document.querySelector(".carson-tracks-container");
-    if (installed && oldButton?.isConnected && oldContainer?.isConnected) return;
-    installed = false;
-    if (oldButton) oldButton.remove();
-    if (oldContainer) oldContainer.remove();
-
     const buttons = [...document.querySelectorAll(".button")];
-    const findTab = asset => buttons.find(button =>
+    // PolyTrack builds a separate track-picker instance for multiplayer. The normal
+    // picker can remain connected but hidden, so always target the newest native tab set.
+    const findTab = asset => [...buttons].reverse().find(button =>
       button.style.getPropertyValue("--image-url").includes(asset)
     );
     const official = findTab("official_tracks.jpg");
     const community = findTab("community_tracks");
     const custom = findTab("custom_tracks.jpg");
+    if (installed && oldButton?.isConnected && oldContainer?.isConnected &&
+        oldButton.parentElement === custom?.parentElement) return;
+    installed = false;
+    if (oldButton) oldButton.remove();
+    if (oldContainer) oldContainer.remove();
     if (official) official.classList.add("official");
     if (community) community.classList.add("community");
     if (custom) custom.classList.add("custom");
