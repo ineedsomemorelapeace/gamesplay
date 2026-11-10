@@ -15,9 +15,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
   });
   const NativeWebSocket = window.WebSocket;
-  const HOST_PATH = "/v6/multiplayer/host";
-  const JOIN_PATH = "/v6/multiplayer/join";
-  const BACKEND_HOST = "pt0-6-0b1-mp-backend.htmlpolytrack.workers.dev";
+  // PolyTrack updates have changed the versioned multiplayer URL. Match the
+  // endpoint path instead of one hard-coded host/version so the Supabase bridge
+  // continues to catch host and join sockets after game updates.
+  function multiplayerRoleFromUrl(value) {
+    try {
+      const pathname = new URL(String(value), location.href).pathname;
+      const match = pathname.match(/\/multiplayer\/(host|join)\/?$/i);
+      return match ? match[1].toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  }
   const slugify = value => String(value || "unnamed-track").normalize("NFKD")
     .toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "unnamed_track";
   // Use one canonical identity rule for every built-in, community, custom, and Carson track.
@@ -113,7 +122,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       this.protocol = "";
       this.binaryType = "blob";
       this.onopen = this.onmessage = this.onerror = this.onclose = null;
-      this.role = this.url.includes(HOST_PATH) ? "host" : "join";
+      this.role = multiplayerRoleFromUrl(this.url) || "join";
       this.peerId = id();
       this.code = null;
       this.channel = null;
@@ -160,7 +169,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       this.deliver({
         version: "0.6.0", type: "createInvite", inviteCode: this.code,
         key: typeof this.hostKey === "string" ? this.hostKey : "",
-        timeoutMilliseconds: null,
+        timeoutMilliseconds: 3600000,
         // PolyTrack expects the host nickname to be initialized before it sends
         // the host player state to a newly connected peer. The bridge has no
         // server-side censor service, so echo the host profile nickname.
@@ -283,7 +292,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
   function PatchedWebSocket(url, protocols) {
     const value = String(url);
-    if (value.includes(BACKEND_HOST) && (value.includes(HOST_PATH) || value.includes(JOIN_PATH))) {
+    if (multiplayerRoleFromUrl(value)) {
+      console.info("PolyTrack multiplayer: routing invite signaling through Supabase", value);
       return new SupabaseSignalSocket(value);
     }
     return protocols === undefined ? new NativeWebSocket(url) : new NativeWebSocket(url, protocols);
@@ -299,7 +309,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
   const NativeXHR = window.XMLHttpRequest;
   window.XMLHttpRequest = class PolyTrackXHR extends NativeXHR {
     open(method, url, ...rest) {
-      this.__polyTrackIceRequest = String(url).includes(BACKEND_HOST) && String(url).includes("/iceServers");
+      let requestPath = "";
+      try { requestPath = new URL(String(url), location.href).pathname; } catch {}
+      this.__polyTrackIceRequest = requestPath.includes("/iceServers");
       this.__polyTrackLeaderboardRequest = isLeaderboardUrl(url);
       this.__polyTrackRecordingsRequest = isRecordingsUrl(url);
       this.__polyTrackUserRequest = isUserUrl(url);
