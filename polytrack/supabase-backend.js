@@ -207,7 +207,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
         isModsVanillaCompatible: data.isModsVanillaCompatible !== false,
         nickname: typeof data.nickname === "string" ? data.nickname : "Player",
         countryCode: typeof data.countryCode === "string" ? data.countryCode : null,
-        carStyle: data.carStyle ?? null
+        carStyle: data.carStyle ?? null,
+        // The native 0.6.3 multiplayer client validates this field on joinInvite.
+        // Use the same public STUN servers returned by our /iceServers compatibility route.
+        iceServers: [{
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302"
+          ]
+        }]
       });
       for (const queued of this.pendingJoinMessages.get(payload.peerId) || []) {
         this.deliver({ version: "0.6.0", type: "iceCandidate", session, candidate: queued.candidate });
