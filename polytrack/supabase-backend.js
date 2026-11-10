@@ -169,7 +169,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.0";
       this.deliver({
         version: "0.6.0", type: "createInvite", inviteCode: this.code,
         key: typeof this.hostKey === "string" ? this.hostKey : "",
-        timeoutMilliseconds: null,
+        timeoutMilliseconds: 3600000,
         // PolyTrack expects the host nickname to be initialized before it sends
         // the host player state to a newly connected peer. The bridge has no
         // server-side censor service, so echo the host profile nickname.
