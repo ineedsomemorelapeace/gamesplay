@@ -40,12 +40,12 @@ jobs:
               if "assets/chat-notifications.js" in content:
                   continue
               import re
-              if re.search(r"</head\\s*>", content, flags=re.I):
-                  updated, count = re.subn(r"</head\\s*>", tag + "\\n</head>", content, count=1, flags=re.I)
-              elif re.search(r"<body\\b", content, flags=re.I):
-                  updated, count = re.subn(r"<body\\b", tag + "\\n<body", content, count=1, flags=re.I)
+              if re.search(r"</head\s*>", content, flags=re.I):
+                  updated, count = re.subn(r"</head\s*>", tag + "\n</head>", content, count=1, flags=re.I)
+              elif re.search(r"<body\b", content, flags=re.I):
+                  updated, count = re.subn(r"<body\b", tag + "\n<body", content, count=1, flags=re.I)
               else:
-                  updated, count = tag + "\\n" + content, 1
+                  updated, count = tag + "\n" + content, 1
               if count:
                   page.write_text(updated, encoding="utf-8")
                   changed += 1
