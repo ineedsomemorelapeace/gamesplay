@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
     <script src="adSense.js"></script>
     
    <title>Taming io Unblocked - Unblocked Games 66</title>
@@ -10,6 +11,8 @@
             margin: 0;
             padding: 0;
             height: 100%;
+            width: 100%;
+            overscroll-behavior: none;
         }
         
         #iframe-container {
@@ -18,10 +21,15 @@
         }
         
         #iframe-container iframe {
+            display:block;
             width: 100%;
             height: 100%;
             border: none;
+            touch-action: pan-x pan-y;
+            -webkit-overflow-scrolling: touch;
         }
+        @supports (height: 100dvh) { #iframe-container { height:100dvh; } }
+        @media (pointer:coarse) { html,body,#iframe-container { width:100%; height:100%; height:100dvh; } }
     </style>
 		<script type="text/javascript" src="patch/js/null.js?//66games.io/controls.js"></script>
 	
@@ -29,7 +37,7 @@
 </head>
 <body style="overflow:hidden;">
     <div id="iframe-container">
-        <iframe src="https://taming.io/"></iframe>
+        <iframe src="https://taming.io/" title="Taming.io" allow="fullscreen; gamepad; autoplay; clipboard-read; clipboard-write" allowfullscreen></iframe>
     </div>
 </body>
 </html>
