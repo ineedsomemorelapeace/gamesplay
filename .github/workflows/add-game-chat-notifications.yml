@@ -1,0 +1,59 @@
+name: Add chat notifications to every game
+
+on:
+  push:
+    paths:
+      - '**/index.html'
+      - '.github/workflows/add-game-chat-notifications.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  inject-notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add the shared notification overlay to every game entry page
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          tag = '<script type="module" src="https://ineedsomemorelapeace.github.io/games/assets/chat-notifications.js"></script>'
+          excluded = {"games", "pokemon", "3kh0v4"}
+          changed = 0
+
+          for page in Path(".").glob("*/index.html"):
+              if page.parent.name.lower() in excluded:
+                  continue
+              content = page.read_text(encoding="utf-8", errors="replace")
+              if "assets/chat-notifications.js" in content:
+                  continue
+              if "</head>" not in content.lower():
+                  continue
+              import re
+              updated, count = re.subn(r"</head\s*>", tag + "\\n</head>", content, count=1, flags=re.I)
+              if count:
+                  page.write_text(updated, encoding="utf-8")
+                  changed += 1
+
+          print(f"Injected notification overlay into {changed} game entry pages.")
+          PY
+
+      - name: Commit game page updates
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add '*/index.html'
+          if git diff --cached --quiet; then
+            echo "All game entry pages already contain the notification script."
+          else
+            git commit -m "Add chat mention notifications to every game"
+            git push
+          fi
