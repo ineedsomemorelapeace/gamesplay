@@ -11,6 +11,17 @@
             outline: none;
         }
 
+        /* Mobile-only controls; the rest of the screen remains available for camera touch. */
+        #mobile-controls{display:none;position:fixed;inset:0;z-index:20;pointer-events:none;font-family:Arial,sans-serif}
+        #mobile-controls.active{display:block}
+        #move-stick{position:absolute;left:max(18px,env(safe-area-inset-left));bottom:max(20px,env(safe-area-inset-bottom));width:116px;height:116px;border-radius:50%;background:rgba(18,24,34,.34);border:2px solid rgba(255,255,255,.42);box-shadow:0 4px 18px #0005;pointer-events:auto;touch-action:none}
+        #move-stick:after{content:"";position:absolute;inset:31px;border:1px solid rgba(255,255,255,.22);border-radius:50%}
+        #stick-knob{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px;border-radius:50%;background:rgba(235,242,255,.86);border:1px solid #fff;box-shadow:0 2px 8px #0006;pointer-events:none;transform:translate(0,0)}
+        #jump-button{position:absolute;right:max(24px,env(safe-area-inset-right));bottom:max(38px,env(safe-area-inset-bottom));width:76px;height:76px;border-radius:50%;border:2px solid rgba(255,255,255,.75);background:rgba(55,130,245,.72);color:#fff;font-size:13px;font-weight:800;letter-spacing:.4px;text-shadow:0 1px 3px #000;box-shadow:0 4px 18px #0005;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none}
+        #jump-button:active{background:rgba(35,105,220,.95);transform:scale(.96)}
+        @media(orientation:landscape){#move-stick{width:104px;height:104px}#jump-button{width:70px;height:70px;bottom:max(24px,env(safe-area-inset-bottom))}}
+        @media(pointer:fine){#mobile-controls{display:none!important}}
+
         html,
         body {
             padding: 0;
@@ -30,6 +41,10 @@
 
 <body class="dark">
     <div id="unity-container" class="unity-desktop"> <canvas id="unity-canvas" tabindex="-1"></canvas> </div>
+    <div id="mobile-controls" aria-hidden="true">
+        <div id="move-stick" aria-label="Movement joystick"><div id="stick-knob"></div></div>
+        <button id="jump-button" type="button">JUMP</button>
+    </div>
     <div id="loading-cover" style="display:none;">
         <div id="unity-loading-bar">
             <div id="unity-logo"><img src="https://cdn.jsdelivr.net/gh/greeniYT/gug@main/icons/chickenend.png" /></div>
@@ -58,6 +73,89 @@
         const progressBarEmpty = document.querySelector("#unity-progress-bar-empty");
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
         const spinner = document.querySelector('.spinner');
+        const mobileControls = document.querySelector("#mobile-controls");
+        const moveStick = document.querySelector("#move-stick");
+        const stickKnob = document.querySelector("#stick-knob");
+        const jumpButton = document.querySelector("#jump-button");
+        const touchDevice = matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const heldKeys = new Set();
+
+        // Dispatch once from the canvas so the event bubbles through Unity's normal input listeners.
+        function setVirtualKey(key, down) {
+            if (heldKeys.has(key) === down) return;
+            if (down) heldKeys.add(key); else heldKeys.delete(key);
+            const code = key === " " ? "Space" : "Key" + key.toUpperCase();
+            canvas.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", {
+                key, code, bubbles: true, cancelable: true
+            }));
+        }
+
+        function releaseMovement() {
+            ["w","a","s","d"].forEach(key => setVirtualKey(key, false));
+            stickKnob.style.transform = "translate(0,0)";
+        }
+
+        let stickPointerId = null;
+        function moveJoystick(event) {
+            const rect = moveStick.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            let dx = event.clientX - centerX;
+            let dy = event.clientY - centerY;
+            const limit = rect.width * 0.34;
+            const distance = Math.hypot(dx, dy);
+            if (distance > limit) {
+                dx = dx / distance * limit;
+                dy = dy / distance * limit;
+            }
+            stickKnob.style.transform = "translate(" + dx + "px," + dy + "px)";
+            const threshold = limit * 0.28;
+            const next = new Set();
+            if (dy < -threshold) next.add("w");
+            if (dy > threshold) next.add("s");
+            if (dx < -threshold) next.add("a");
+            if (dx > threshold) next.add("d");
+            ["w","a","s","d"].forEach(key => setVirtualKey(key, next.has(key)));
+        }
+
+        if (touchDevice) {
+            moveStick.addEventListener("pointerdown", event => {
+                event.preventDefault();
+                stickPointerId = event.pointerId;
+                moveStick.setPointerCapture(event.pointerId);
+                moveJoystick(event);
+            });
+            moveStick.addEventListener("pointermove", event => {
+                if (event.pointerId === stickPointerId) {
+                    event.preventDefault();
+                    moveJoystick(event);
+                }
+            });
+            const endStick = event => {
+                if (stickPointerId !== null && (event.pointerId === undefined || event.pointerId === stickPointerId)) {
+                    stickPointerId = null;
+                    releaseMovement();
+                }
+            };
+            moveStick.addEventListener("pointerup", endStick);
+            moveStick.addEventListener("pointercancel", endStick);
+            moveStick.addEventListener("lostpointercapture", endStick);
+
+            jumpButton.addEventListener("pointerdown", event => {
+                event.preventDefault();
+                jumpButton.setPointerCapture(event.pointerId);
+                setVirtualKey(" ", true);
+            });
+            const endJump = () => setVirtualKey(" ", false);
+            jumpButton.addEventListener("pointerup", endJump);
+            jumpButton.addEventListener("pointercancel", endJump);
+            jumpButton.addEventListener("lostpointercapture", endJump);
+            window.addEventListener("blur", () => {
+                stickPointerId = null;
+                releaseMovement();
+                endJump();
+            });
+        }
         const canFullscreen = (function() {
             for (const key of ['exitFullscreen', 'webkitExitFullscreen', 'webkitCancelFullScreen', 'mozCancelFullScreen', 'msExitFullscreen', ]) {
                 if (key in document) {
@@ -192,6 +290,7 @@
                     }).then((unityInstance) => {
                         myGameInstance = unityInstance;
                         loadingCover.style.display = "none";
+                        if (touchDevice) mobileControls.classList.add("active");
                     }).catch((message) => {
                         console.error("Unity yükleme hatası:", message);
                     });
