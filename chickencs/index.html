@@ -25,11 +25,22 @@
             -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
             height: 100%;
         }
+
+        #mobile-controls{display:none;position:fixed;inset:0;z-index:20;pointer-events:none;touch-action:none;font-family:Arial,sans-serif}
+        #mobile-controls.active{display:block}
+        #move-stick{position:absolute;left:max(22px,env(safe-area-inset-left));bottom:max(24px,env(safe-area-inset-bottom));width:116px;height:116px;border-radius:50%;background:rgba(18,24,34,.34);border:2px solid rgba(255,255,255,.42);box-shadow:0 4px 18px #0005;pointer-events:auto;touch-action:none}
+        #move-stick:after{content:"";position:absolute;inset:31px;border:1px solid rgba(255,255,255,.22);border-radius:50%}
+        #stick-knob{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px;border-radius:50%;background:rgba(235,242,255,.82);border:1px solid #fff;box-shadow:0 2px 8px #0006;transform:translate(0,0);pointer-events:none}
+        #jump-button{position:absolute;right:max(28px,env(safe-area-inset-right));bottom:max(42px,env(safe-area-inset-bottom));width:76px;height:76px;border-radius:50%;border:2px solid rgba(255,255,255,.72);background:rgba(70,145,255,.68);color:#fff;font-size:14px;font-weight:800;letter-spacing:.5px;text-shadow:0 1px 3px #000;box-shadow:0 4px 18px #0005;pointer-events:auto;touch-action:none;user-select:none;-webkit-user-select:none}
+        #jump-button:active{background:rgba(45,115,230,.9);transform:scale(.96)}
+        @media(orientation:landscape){#move-stick{width:108px;height:108px}#jump-button{width:70px;height:70px;bottom:max(28px,env(safe-area-inset-bottom))}}
+        @media(pointer:fine){#mobile-controls{display:none!important}}
     </style>
 </head>
 
 <body class="dark">
     <div id="unity-container" class="unity-desktop"> <canvas id="unity-canvas" tabindex="-1"></canvas> </div>
+    <div id="mobile-controls" aria-hidden="true"><div id="move-stick" aria-label="Movement joystick"><div id="stick-knob"></div></div><button id="jump-button" type="button">JUMP</button></div>
     <div id="loading-cover" style="display:none;">
         <div id="unity-loading-bar">
             <div id="unity-logo"><img src="https://cdn.jsdelivr.net/gh/greeniYT/gug@main/icons/chickenend.png" /></div>
@@ -58,6 +69,44 @@
         const progressBarEmpty = document.querySelector("#unity-progress-bar-empty");
         const progressBarFull = document.querySelector("#unity-progress-bar-full");
         const spinner = document.querySelector('.spinner');
+        const mobileControls = document.querySelector("#mobile-controls");
+        const moveStick = document.querySelector("#move-stick");
+        const stickKnob = document.querySelector("#stick-knob");
+        const jumpButton = document.querySelector("#jump-button");
+        const touchDevice = matchMedia("(pointer: coarse)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const activeMoveKeys = new Set();
+        function sendGameKey(key, down) {
+            const code = key === " " ? "Space" : "Key" + key.toUpperCase();
+            const event = new KeyboardEvent(down ? "keydown" : "keyup", {key, code, bubbles:true, cancelable:true, composed:true});
+            window.dispatchEvent(event); document.dispatchEvent(event); canvas.dispatchEvent(event);
+        }
+        function setMoveKeys(next) {
+            for (const key of activeMoveKeys) if (!next.has(key)) sendGameKey(key, false);
+            for (const key of next) if (!activeMoveKeys.has(key)) sendGameKey(key, true);
+            activeMoveKeys.clear(); next.forEach(key => activeMoveKeys.add(key));
+        }
+        let stickPointer = null;
+        function updateStick(event) {
+            const rect = moveStick.getBoundingClientRect();
+            const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+            let dx = event.clientX-cx, dy = event.clientY-cy;
+            const max = rect.width*.34, distance = Math.hypot(dx,dy);
+            if(distance>max){dx=dx/distance*max;dy=dy/distance*max;}
+            stickKnob.style.transform = "translate("+dx+"px,"+dy+"px)";
+            const threshold = max*.28, next = new Set();
+            if(dy < -threshold) next.add("w"); if(dy > threshold) next.add("s");
+            if(dx < -threshold) next.add("a"); if(dx > threshold) next.add("d");
+            setMoveKeys(next);
+        }
+        if(touchDevice){
+            moveStick.addEventListener("pointerdown", event=>{event.preventDefault();stickPointer=event.pointerId;moveStick.setPointerCapture(stickPointer);updateStick(event);});
+            moveStick.addEventListener("pointermove", event=>{if(event.pointerId===stickPointer){event.preventDefault();updateStick(event);}});
+            const releaseStick=event=>{if(stickPointer!==null&&(event.pointerId===undefined||event.pointerId===stickPointer)){stickPointer=null;stickKnob.style.transform="translate(0,0)";setMoveKeys(new Set());}};
+            moveStick.addEventListener("pointerup",releaseStick);moveStick.addEventListener("pointercancel",releaseStick);moveStick.addEventListener("lostpointercapture",releaseStick);
+            jumpButton.addEventListener("pointerdown",event=>{event.preventDefault();jumpButton.setPointerCapture(event.pointerId);sendGameKey(" ",true);});
+            const releaseJump=()=>sendGameKey(" ",false);
+            jumpButton.addEventListener("pointerup",releaseJump);jumpButton.addEventListener("pointercancel",releaseJump);jumpButton.addEventListener("lostpointercapture",releaseJump);
+        }
         const canFullscreen = (function() {
             for (const key of ['exitFullscreen', 'webkitExitFullscreen', 'webkitCancelFullScreen', 'mozCancelFullScreen', 'msExitFullscreen', ]) {
                 if (key in document) {
@@ -192,6 +241,7 @@
                     }).then((unityInstance) => {
                         myGameInstance = unityInstance;
                         loadingCover.style.display = "none";
+                        if(touchDevice) mobileControls.classList.add("active");
                     }).catch((message) => {
                         console.error("Unity yükleme hatası:", message);
                     });
