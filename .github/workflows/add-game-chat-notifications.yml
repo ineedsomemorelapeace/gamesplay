@@ -17,6 +17,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          filter: blob:none
+          sparse-checkout: |
+            /*/index.html
+            /.github/workflows/add-game-chat-notifications.yml
+          sparse-checkout-cone-mode: false
 
       - name: Add the shared notification overlay to every game entry page
         shell: bash
@@ -37,7 +42,7 @@ jobs:
               if "</head>" not in content.lower():
                   continue
               import re
-              updated, count = re.subn(r"</head\s*>", tag + "\\n</head>", content, count=1, flags=re.I)
+              updated, count = re.subn(r"</head\s*>", tag + "\n</head>", content, count=1, flags=re.I)
               if count:
                   page.write_text(updated, encoding="utf-8")
                   changed += 1
